@@ -1,9 +1,10 @@
 import { STATUS_CONFIG } from '../types';
+import type { View } from '../App';
 import type { useStore } from '../store';
 
 type Store = ReturnType<typeof useStore>;
 
-export function Dashboard({ store, onNavigate }: { store: Store; onNavigate: (v: string) => void }) {
+export function Dashboard({ store, onNavigate }: { store: Store; onNavigate: (v: View) => void }) {
   const { data } = store;
   const td = store.today();
   const month = store.thisMonth();
@@ -171,7 +172,7 @@ export function Dashboard({ store, onNavigate }: { store: Store; onNavigate: (v:
               { icon: '▦', label: 'ボード', nav: 'board' },
               { icon: '▬', label: 'ガント', nav: 'gantt' },
               { icon: '¥', label: '請求書', nav: 'invoice' },
-            ].map(btn => (
+            ] as { icon: string; label: string; nav: View }[]).map(btn => (
               <button key={btn.nav} onClick={() => onNavigate(btn.nav)}
                 className="flex flex-col items-center gap-1.5 py-3 rounded-xl bg-zinc-900/60 border border-zinc-800/50 hover:border-zinc-700/60 hover:bg-zinc-800/40 transition-all text-zinc-400 hover:text-zinc-200">
                 <span className="text-base font-mono">{btn.icon}</span>
