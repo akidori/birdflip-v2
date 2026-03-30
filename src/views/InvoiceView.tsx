@@ -137,6 +137,8 @@ function openPDFPreview(html: string) {
 // ─────────────────────────────────────────────────
 //  InvoiceView
 // ─────────────────────────────────────────────────
+//  InvoiceView
+// ─────────────────────────────────────────────────
 export function InvoiceView({ store }: { store: Store }) {
   const { data, addInvoice, updateInvoice, importTasksToInvoice } = store;
   const td = store.today();
@@ -159,49 +161,43 @@ export function InvoiceView({ store }: { store: Store }) {
     openPDFPreview(buildPDFHtml(inv, client?.name || '—', data.company));
   };
 
-  // タスク取込 + フィードバック
   const handleImport = (invId: string) => {
     importTasksToInvoice(invId);
     setImportedId(invId);
     setTimeout(() => setImportedId(null), 2000);
   };
 
-  // 取込可能タスク数を計算（プレビュー）
-  const countImportable = (inv: Invoice) => {
-    return data.tasks.filter(t => {
-      if (t.status !== 'done') return false;
-      if (t.clientId !== inv.clientId) return false;
-      const dateStr = t.completedAt || t.deadline || t.createdAt || '';
-      if (!dateStr) return true;
-      return dateStr.startsWith(inv.targetMonth);
+  const countImportable = (inv: Invoice) =>
+    data.tasks.filter(t => {
+      if (t.status !== 'done' || t.clientId !== inv.clientId) return false;
+      const d = t.completedAt || t.deadline || t.createdAt || '';
+      return !d || d.startsWith(inv.targetMonth);
     }).filter(t => !inv.items.some(it => it.taskId === t.id)).length;
+
+  const C = {
+    page: { padding: '28px 32px 52px', maxWidth: 960, margin: '0 auto' } as const,
+    row: { display:'flex', alignItems:'center', gap:12, padding:'14px 20px', cursor:'pointer', transition:'background .12s' } as const,
   };
 
   return (
-    <div style={{ padding:'24px', maxWidth:920, margin:'0 auto' }}>
-
+    <div style={C.page}>
       {/* ── HEADER ── */}
-      <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:24 }}>
+      <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:28 }}>
         <div>
-          <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.2em', marginBottom:4 }}>
-            INVOICE MANAGEMENT
-          </div>
-          <div style={{ fontFamily:'var(--head)', fontSize:20, fontWeight:800, color:'var(--text)', letterSpacing:'-0.5px' }}>
-            請求書
-          </div>
+          <div className="label" style={{ marginBottom:8 }}>INVOICE MANAGEMENT</div>
+          <h1 style={{ fontFamily:'var(--head)', fontSize:36, letterSpacing:2, margin:0, lineHeight:1 }}>
+            INVOICE
+          </h1>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <select
-            value={selectedClientId}
-            onChange={e => setSelectedClientId(e.target.value)}
-            style={{ padding:'8px 12px', fontSize:11, width:160 }}>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)}
+            style={{ padding:'8px 12px', fontSize:11, width:168 }}>
             <option value="">クライアントを選択</option>
             {data.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button className="btn-accent"
+          <button className="btn btn-ac"
             onClick={() => { if (selectedClientId) { addInvoice(selectedClientId); setSelectedClientId(''); } }}
-            disabled={!selectedClientId}
-            style={{ opacity: selectedClientId ? 1 : 0.4, cursor: selectedClientId ? 'pointer' : 'not-allowed' }}>
+            disabled={!selectedClientId} style={{ opacity: selectedClientId ? 1 : 0.4 }}>
             ＋ 新規作成
           </button>
         </div>
@@ -209,10 +205,10 @@ export function InvoiceView({ store }: { store: Store }) {
 
       {/* ── EMPTY ── */}
       {data.invoices.length === 0 && (
-        <div style={{ textAlign:'center', padding:'80px 0', color:'var(--text3)' }}>
-          <div style={{ fontFamily:'var(--mono)', fontSize:32, marginBottom:12, opacity:0.15 }}>¥</div>
-          <div style={{ fontSize:12, fontFamily:'var(--mono)', letterSpacing:'0.1em' }}>NO INVOICES</div>
-          <div style={{ fontSize:11, marginTop:6 }}>クライアントを選択して新規作成してください</div>
+        <div style={{ textAlign:'center', padding:'80px 0', color:'var(--tx3)' }}>
+          <div style={{ fontFamily:'var(--mono)', fontSize:40, marginBottom:12, opacity:.12 }}>¥</div>
+          <div className="label">NO INVOICES</div>
+          <div style={{ fontSize:11, color:'var(--tx3)', marginTop:8 }}>クライアントを選択して新規作成</div>
         </div>
       )}
 
@@ -226,171 +222,126 @@ export function InvoiceView({ store }: { store: Store }) {
           const importable = countImportable(inv);
           const justImported = importedId === inv.id;
 
+          const borderC = inv.paid ? 'rgba(0,255,163,.18)'
+            : isLate ? 'rgba(255,77,109,.22)'
+            : 'var(--bd0)';
+
           return (
             <div key={inv.id} style={{
-              background: 'var(--surface)',
-              border: `1px solid ${inv.paid ? 'rgba(34,197,94,0.2)' : isLate ? 'rgba(255,77,109,0.25)' : 'var(--border)'}`,
-              borderRadius: 10,
+              background: 'linear-gradient(145deg, var(--s0), var(--bg2))',
+              border: `1px solid ${borderC}`,
+              borderRadius: 14,
               overflow: 'hidden',
-              transition: 'border-color 0.15s',
+              transition: 'border-color .15s',
             }}>
               {/* ── ROW ── */}
-              <div className="inv-row" onClick={() => setOpenId(isOpen ? null : inv.id)}>
+              <div style={C.row}
+                onClick={() => setOpenId(isOpen ? null : inv.id)}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,255,163,.025)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
                 {/* Status bar */}
-                <div style={{ width:3, height:36, borderRadius:2, background: inv.paid ? '#22c55e' : isLate ? 'var(--red)' : 'var(--border2)', flexShrink:0 }} />
+                <div style={{ width:3, height:38, borderRadius:2, flexShrink:0,
+                  background: inv.paid ? 'var(--ac)' : isLate ? 'var(--red)' : 'var(--bd1)',
+                  boxShadow: inv.paid ? '0 0 8px var(--ac)' : isLate ? '0 0 8px var(--red)' : 'none',
+                }}/>
 
-                {/* Number */}
-                <div style={{ fontFamily:'var(--mono)', fontSize:11, fontWeight:700, color:'var(--accent)', minWidth:120 }}>
+                <div className="n-sm" style={{ color:'var(--ac)', minWidth:128, fontSize:11, fontWeight:600 }}>
                   {inv.number}
                 </div>
 
-                {/* Client */}
-                <div style={{ fontSize:12, fontWeight:600, color:'var(--text)', minWidth:100 }}>
-                  {client?.name || '—'}
-                </div>
+                <div style={{ fontSize:12, fontWeight:600, minWidth:100 }}>{client?.name || '—'}</div>
 
-                {/* Month */}
                 {inv.targetMonth && (
-                  <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:4, padding:'2px 8px' }}>
+                  <div className="n-sm" style={{ background:'var(--s2)', border:'1px solid var(--bd1)', borderRadius:6, padding:'2px 9px', color:'var(--tx2)' }}>
                     {inv.targetMonth.replace('-', '/')}
                   </div>
                 )}
 
-                {/* Items count */}
-                <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)' }}>
-                  {inv.items.length}件
-                </div>
+                <div className="n-sm" style={{ color:'var(--tx2)' }}>{inv.items.length}件</div>
 
-                {/* Status badge */}
-                {inv.paid && (
-                  <span className="tag" style={{ background:'rgba(34,197,94,0.1)', color:'#22c55e', border:'1px solid rgba(34,197,94,0.2)' }}>
-                    PAID
-                  </span>
-                )}
-                {isLate && !inv.paid && (
-                  <span className="tag" style={{ background:'rgba(255,77,109,0.1)', color:'var(--red)', border:'1px solid rgba(255,77,109,0.2)' }}>
-                    OVERDUE
-                  </span>
-                )}
+                {inv.paid && <span className="badge" style={{ color:'var(--ac)', borderColor:'rgba(0,255,163,.3)', background:'rgba(0,255,163,.07)', fontSize:9 }}>PAID</span>}
+                {isLate && !inv.paid && <span className="badge" style={{ color:'var(--red)', borderColor:'rgba(255,77,109,.3)', background:'rgba(255,77,109,.07)', fontSize:9 }}>OVERDUE</span>}
                 {importable > 0 && !inv.paid && (
-                  <span className="tag" style={{ background:'rgba(74,244,200,0.08)', color:'var(--accent)', border:'1px solid rgba(74,244,200,0.18)' }}>
-                    タスク{importable}件
+                  <span className="badge" style={{ color:'var(--blue)', borderColor:'rgba(75,142,255,.3)', background:'rgba(75,142,255,.07)', fontSize:9 }}>
+                    +{importable} tasks
                   </span>
                 )}
 
-                <div style={{ flex:1 }} />
+                <div style={{ flex:1 }}/>
 
-                {/* Total */}
-                <div style={{ fontFamily:'var(--mono)', fontSize:15, fontWeight:700, color: inv.paid ? '#22c55e' : 'var(--text)' }}>
+                <div className="n-lg" style={{ color: inv.paid ? 'var(--ac)' : 'var(--tx)' }}>
                   {fmt(total)}
                 </div>
-
-                {/* Chevron */}
-                <div style={{ fontSize:10, color:'var(--text3)', transition:'transform 0.15s', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</div>
+                <div style={{ fontSize:10, color:'var(--tx3)', transition:'transform .15s', transform: isOpen ? 'rotate(180deg)' : 'none', marginLeft:6 }}>▾</div>
               </div>
 
               {/* ── DETAIL ── */}
               {isOpen && (
-                <div style={{ borderTop:'1px solid var(--border)', padding:'20px 24px', animation:'fadeSlideIn 0.2s ease' }}>
+                <div className="anim-up" style={{ borderTop:'1px solid var(--bd0)', padding:'20px 24px' }}>
 
-                  {/* Config row */}
+                  {/* Settings row */}
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10, marginBottom:20 }}>
                     {[
-                      { label:'請求書番号', key:'number', type:'text', mono:true },
+                      { label:'請求書番号', content: <input value={inv.number} onChange={e => updateInvoice(inv.id, { number: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11, fontFamily:'var(--mono)' }}/> },
+                      { label:'宛先', content: <select value={inv.clientId} onChange={e => updateInvoice(inv.id, { clientId: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}>{data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select> },
+                      { label:'対象月', content: <input type="month" value={inv.targetMonth} onChange={e => updateInvoice(inv.id, { targetMonth: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}/> },
+                      { label:'支払期限', content: <input type="date" value={inv.dueDate} onChange={e => updateInvoice(inv.id, { dueDate: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}/> },
+                      { label:'税区分', content: <select value={inv.taxType} onChange={e => updateInvoice(inv.id, { taxType: e.target.value as Invoice['taxType'] })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}><option value="exclusive">税別(+10%)</option><option value="inclusive">税込(内税)</option><option value="none">非課税</option></select> },
                     ].map(f => (
-                      <div key={f.key}>
-                        <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:'0.1em', marginBottom:4 }}>{f.label}</div>
-                        <input value={inv.number} onChange={e => updateInvoice(inv.id, { number: e.target.value })}
-                          style={{ width:'100%', padding:'7px 10px', fontSize:11, fontFamily:'var(--mono)' }} />
+                      <div key={f.label}>
+                        <div className="label" style={{ marginBottom:5, fontSize:8 }}>{f.label}</div>
+                        {f.content}
                       </div>
                     ))}
-                    <div>
-                      <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:'0.1em', marginBottom:4 }}>宛先</div>
-                      <select value={inv.clientId} onChange={e => updateInvoice(inv.id, { clientId: e.target.value })}
-                        style={{ width:'100%', padding:'7px 10px', fontSize:11 }}>
-                        {data.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:'0.1em', marginBottom:4 }}>対象月</div>
-                      <input type="month" value={inv.targetMonth} onChange={e => updateInvoice(inv.id, { targetMonth: e.target.value })}
-                        style={{ width:'100%', padding:'7px 10px', fontSize:11 }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:'0.1em', marginBottom:4 }}>支払期限</div>
-                      <input type="date" value={inv.dueDate} onChange={e => updateInvoice(inv.id, { dueDate: e.target.value })}
-                        style={{ width:'100%', padding:'7px 10px', fontSize:11 }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', letterSpacing:'0.1em', marginBottom:4 }}>税区分</div>
-                      <select value={inv.taxType} onChange={e => updateInvoice(inv.id, { taxType: e.target.value as Invoice['taxType'] })}
-                        style={{ width:'100%', padding:'7px 10px', fontSize:11 }}>
-                        <option value="exclusive">税別(+10%)</option>
-                        <option value="inclusive">税込(内税)</option>
-                        <option value="none">非課税</option>
-                      </select>
-                    </div>
                   </div>
 
                   {/* Items table */}
-                  <table className="bf-table" style={{ marginBottom:12 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ width:32 }}>#</th>
-                        <th>品目 / DESCRIPTION</th>
-                        <th style={{ textAlign:'right', width:60 }}>数量</th>
-                        <th style={{ textAlign:'right', width:120 }}>単価</th>
-                        <th style={{ textAlign:'right', width:120 }}>金額</th>
-                        <th style={{ width:28 }}></th>
-                      </tr>
-                    </thead>
+                  <table className="tbl" style={{ marginBottom:12 }}>
+                    <thead><tr>
+                      <th style={{ width:32 }}>#</th>
+                      <th>品目 / DESCRIPTION</th>
+                      <th style={{ textAlign:'right', width:60 }}>数量</th>
+                      <th style={{ textAlign:'right', width:120 }}>単価</th>
+                      <th style={{ textAlign:'right', width:120 }}>金額</th>
+                      <th style={{ width:28 }}/>
+                    </tr></thead>
                     <tbody>
                       {inv.items.length === 0 && (
-                        <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text3)', padding:'20px', fontSize:11, fontFamily:'var(--mono)' }}>
-                          明細なし — タスクから取込むか手動追加
+                        <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--tx3)', padding:'20px', fontFamily:'var(--mono)', fontSize:9, letterSpacing:'.1em' }}>
+                          NO ITEMS — タスクから取込むか手動追加
                         </td></tr>
                       )}
                       {inv.items.map((it, li) => (
                         <tr key={li}>
-                          <td style={{ color:'var(--text3)', fontFamily:'var(--mono)', fontSize:10 }}>{li + 1}</td>
+                          <td className="n-sm" style={{ color:'var(--tx3)' }}>{li + 1}</td>
                           <td>
                             <input value={it.name}
-                              onChange={e => {
-                                const items = [...inv.items]; items[li] = { ...items[li], name: e.target.value };
-                                updateInvoice(inv.id, { items });
-                              }}
-                              style={{ background:'transparent', border:'none', width:'100%', fontSize:12, color:'var(--text)', padding:'2px 4px', borderRadius:4 }}
-                              onFocus={e => e.currentTarget.style.background = 'var(--surface2)'}
-                              onBlur={e => e.currentTarget.style.background = 'transparent'}
+                              onChange={e => { const items=[...inv.items]; items[li]={...items[li],name:e.target.value}; updateInvoice(inv.id,{items}); }}
+                              style={{ background:'transparent', border:'none', width:'100%', fontSize:12, color:'var(--tx)', padding:'2px 4px', borderRadius:4 }}
+                              onFocus={e=>e.currentTarget.style.background='var(--s2)'}
+                              onBlur={e=>e.currentTarget.style.background='transparent'}
                             />
-                            {it.taskId && <span style={{ fontSize:9, color:'var(--accent)', fontFamily:'var(--mono)', marginLeft:4, opacity:0.6 }}>TASK</span>}
+                            {it.taskId && <span className="n-sm" style={{ color:'var(--ac)', marginLeft:4, opacity:.5 }}>TASK</span>}
                           </td>
                           <td style={{ textAlign:'right' }}>
                             <input type="number" value={it.qty}
-                              onChange={e => {
-                                const items = [...inv.items]; const q = Number(e.target.value) || 1;
-                                items[li] = { ...items[li], qty: q, amount: q * items[li].unitPrice };
-                                updateInvoice(inv.id, { items });
-                              }}
-                              style={{ background:'transparent', border:'none', width:50, textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--text2)' }} />
+                              onChange={e=>{ const items=[...inv.items]; const q=Number(e.target.value)||1; items[li]={...items[li],qty:q,amount:q*items[li].unitPrice}; updateInvoice(inv.id,{items}); }}
+                              style={{ background:'transparent', border:'none', width:50, textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--tx1)' }}
+                            />
                           </td>
                           <td style={{ textAlign:'right' }}>
                             <input type="number" value={it.unitPrice}
-                              onChange={e => {
-                                const items = [...inv.items]; const p = Number(e.target.value) || 0;
-                                items[li] = { ...items[li], unitPrice: p, amount: items[li].qty * p };
-                                updateInvoice(inv.id, { items });
-                              }}
-                              style={{ background:'transparent', border:'none', width:100, textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--text2)' }} />
+                              onChange={e=>{ const items=[...inv.items]; const p=Number(e.target.value)||0; items[li]={...items[li],unitPrice:p,amount:items[li].qty*p}; updateInvoice(inv.id,{items}); }}
+                              style={{ background:'transparent', border:'none', width:100, textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--tx1)' }}
+                            />
                           </td>
-                          <td style={{ textAlign:'right', fontFamily:'var(--mono)', fontSize:12, fontWeight:600, color:'var(--text)' }}>
-                            {fmt(it.amount)}
-                          </td>
+                          <td className="n-sm" style={{ textAlign:'right', fontWeight:600, fontSize:12, color:'var(--tx)' }}>{fmt(it.amount)}</td>
                           <td>
-                            <button onClick={() => updateInvoice(inv.id, { items: inv.items.filter((_, j) => j !== li) })}
-                              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', fontSize:11, padding:'0 4px', opacity:0.5 }}
-                              onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
-                              onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
+                            <button onClick={()=>updateInvoice(inv.id,{items:inv.items.filter((_,j)=>j!==li)})}
+                              style={{ background:'none', border:'none', color:'var(--tx3)', fontSize:11, padding:'0 4px' }}
+                              onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+                              onMouseLeave={e=>e.currentTarget.style.color='var(--tx3)'}
                             >✕</button>
                           </td>
                         </tr>
@@ -398,72 +349,55 @@ export function InvoiceView({ store }: { store: Store }) {
                     </tbody>
                   </table>
 
-                  {/* Add buttons */}
-                  <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-                    <button className="btn-ghost"
-                      onClick={() => updateInvoice(inv.id, { items: [...inv.items, { taskId: '', name: '', qty: 1, unitPrice: 0, amount: 0 }] })}
-                      style={{ fontSize:11 }}>
-                      ＋ 明細追加
-                    </button>
-                    <button
-                      onClick={() => handleImport(inv.id)}
-                      style={{
-                        padding:'7px 16px', fontSize:11, borderRadius:8, cursor:'pointer',
-                        background: justImported ? 'rgba(74,244,200,0.15)' : importable > 0 ? 'rgba(74,244,200,0.1)' : 'transparent',
-                        border: importable > 0 ? '1px solid rgba(74,244,200,0.3)' : '1px solid var(--border2)',
-                        color: justImported ? 'var(--accent)' : importable > 0 ? 'var(--accent)' : 'var(--text3)',
-                        transition: 'all 0.15s',
-                        fontFamily: 'var(--mono)',
-                        letterSpacing: '0.05em',
-                      }}>
-                      {justImported ? '✓ 取込完了' : importable > 0 ? `📋 タスク${importable}件を取込` : `📋 ${inv.targetMonth?.replace('-','/')} タスク取込`}
-                    </button>
-                  </div>
-
-                  {/* Totals + Actions */}
+                  {/* Buttons + Total */}
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
-                    {/* Actions */}
-                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                      <button className="btn-accent" onClick={() => handlePDF(inv)} style={{ fontSize:11 }}>
-                        🖨 PDF出力
+                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+                      <button className="btn btn-ghost" style={{ fontSize:11 }}
+                        onClick={()=>updateInvoice(inv.id,{items:[...inv.items,{taskId:'',name:'',qty:1,unitPrice:0,amount:0}]})}>
+                        ＋ 明細追加
                       </button>
-                      <button onClick={() => updateInvoice(inv.id, { paid: !inv.paid, paidAt: inv.paid ? '' : td })}
-                        style={{
-                          padding:'7px 16px', fontSize:11, borderRadius:8, cursor:'pointer',
-                          background: inv.paid ? 'rgba(255,77,109,0.08)' : 'rgba(34,197,94,0.1)',
-                          border: inv.paid ? '1px solid rgba(255,77,109,0.2)' : '1px solid rgba(34,197,94,0.25)',
-                          color: inv.paid ? 'var(--red)' : '#22c55e',
-                          fontFamily: 'var(--mono)', fontSize: 10, letterSpacing:'0.05em',
-                        }}>
-                        {inv.paid ? '✕ 未入金に戻す' : '✓ 入金済にする'}
+                      <button onClick={()=>handleImport(inv.id)} style={{
+                        padding:'8px 16px', fontSize:11, borderRadius:8, cursor:'pointer',
+                        background: justImported ? 'rgba(0,255,163,.15)' : importable>0 ? 'rgba(75,142,255,.1)' : 'transparent',
+                        border: importable>0||justImported ? `1px solid ${justImported?'rgba(0,255,163,.4)':'rgba(75,142,255,.3)'}` : '1px solid var(--bd1)',
+                        color: justImported ? 'var(--ac)' : importable>0 ? 'var(--blue)' : 'var(--tx2)',
+                        fontFamily:'var(--mono)', fontSize:10, letterSpacing:'.05em', transition:'all .15s',
+                      }}>
+                        {justImported ? '✓ 取込完了' : importable>0 ? `📋 ${importable}件のタスクを取込` : `📋 タスク取込`}
                       </button>
-                      <input value={inv.note || ''} onChange={e => updateInvoice(inv.id, { note: e.target.value })}
-                        placeholder="備考..."
-                        style={{ padding:'7px 12px', fontSize:11, width:160 }} />
-                      <button onClick={() => { if (confirm('削除しますか？')) store.update(d => { d.invoices = d.invoices.filter(x => x.id !== inv.id); }); }}
-                        style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', fontSize:14, padding:'4px 8px' }}
-                        onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
-                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
+                      <button className="btn btn-ac" style={{ fontSize:11 }} onClick={()=>handlePDF(inv)}>🖨 PDF</button>
+                      <button onClick={()=>updateInvoice(inv.id,{paid:!inv.paid,paidAt:inv.paid?'':td})} style={{
+                        padding:'8px 16px', fontSize:10, borderRadius:8, cursor:'pointer', fontFamily:'var(--mono)',
+                        background: inv.paid ? 'rgba(255,77,109,.08)' : 'rgba(0,255,163,.08)',
+                        border: inv.paid ? '1px solid rgba(255,77,109,.25)' : '1px solid rgba(0,255,163,.25)',
+                        color: inv.paid ? 'var(--red)' : 'var(--ac)', letterSpacing:'.05em',
+                      }}>
+                        {inv.paid ? '✕ 未入金' : '✓ 入金済'}
+                      </button>
+                      <input value={inv.note||''} onChange={e=>updateInvoice(inv.id,{note:e.target.value})}
+                        placeholder="備考..." style={{ padding:'7px 12px', fontSize:11, width:150 }}/>
+                      <button style={{ background:'none', border:'none', color:'var(--tx3)', fontSize:15, padding:'4px 6px' }}
+                        onClick={()=>{if(confirm('削除しますか？'))store.update(d=>{d.invoices=d.invoices.filter(x=>x.id!==inv.id);});}}
+                        onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+                        onMouseLeave={e=>e.currentTarget.style.color='var(--tx3)'}
                       >🗑</button>
                     </div>
 
-                    {/* Totals */}
-                    <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:8, padding:'12px 20px', minWidth:200 }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:4 }}>
-                        <span style={{ color:'var(--text3)' }}>小計</span>
-                        <span style={{ fontFamily:'var(--mono)' }}>{fmt(inv.taxType === 'inclusive' ? sub - tax : sub)}</span>
+                    {/* Totals box */}
+                    <div style={{ background:'var(--bg2)', border:'1px solid var(--bd1)', borderRadius:12, padding:'14px 20px', minWidth:210, flexShrink:0 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:5 }}>
+                        <span style={{ color:'var(--tx2)' }}>小計</span>
+                        <span className="n-sm">{fmt(inv.taxType==='inclusive'?sub-tax:sub)}</span>
                       </div>
-                      {inv.taxType !== 'none' && (
-                        <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:8 }}>
-                          <span style={{ color:'var(--text3)' }}>{inv.taxType === 'exclusive' ? '消費税(10%)' : 'うち消費税'}</span>
-                          <span style={{ fontFamily:'var(--mono)' }}>{fmt(tax)}</span>
+                      {inv.taxType!=='none'&&(
+                        <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:10 }}>
+                          <span style={{ color:'var(--tx2)' }}>{inv.taxType==='exclusive'?'消費税(10%)':'うち消費税'}</span>
+                          <span className="n-sm">{fmt(tax)}</span>
                         </div>
                       )}
-                      <div style={{ borderTop:'1px solid var(--border2)', paddingTop:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--accent)', letterSpacing:'0.1em' }}>TOTAL</span>
-                        <span style={{ fontFamily:'var(--mono)', fontSize:18, fontWeight:700, color: inv.paid ? '#22c55e' : 'var(--accent)' }}>
-                          {fmt(total)}
-                        </span>
+                      <div style={{ borderTop:'1px solid var(--bd1)', paddingTop:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <span className="label" style={{ color:'var(--ac)' }}>TOTAL</span>
+                        <span className="n-xl" style={{ color: inv.paid?'var(--ac)':'var(--tx)', fontSize:20 }}>{fmt(total)}</span>
                       </div>
                     </div>
                   </div>

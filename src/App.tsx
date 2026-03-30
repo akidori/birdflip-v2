@@ -1,187 +1,275 @@
 import { useState } from 'react';
 import { useStore } from './store';
-import { TaskTable } from './views/TaskTable';
-import { TaskBoard } from './views/TaskBoard';
+import { TaskTable }   from './views/TaskTable';
+import { TaskBoard }   from './views/TaskBoard';
 import { InvoiceView } from './views/InvoiceView';
-import { Dashboard } from './views/Dashboard';
-import { GanttView } from './views/GanttView';
-import { ReportView } from './views/ReportView';
-import { SettingsView } from './views/SettingsView';
+import { Dashboard }   from './views/Dashboard';
+import { GanttView }   from './views/GanttView';
+import { ReportView }  from './views/ReportView';
+import { SettingsView} from './views/SettingsView';
 import { DiscordView } from './views/DiscordView';
 
-export type View = 'dashboard' | 'table' | 'board' | 'gantt' | 'invoice' | 'report' | 'settings' | 'discord';
+export type View = 'dashboard'|'table'|'board'|'gantt'|'invoice'|'report'|'settings'|'discord';
 
-const NAV: { id: View; icon: string; label: string; sub?: string }[] = [
-  { id: 'dashboard', icon: '◆', label: 'OVERVIEW',  sub: 'ダッシュボード' },
-  { id: 'table',     icon: '≡', label: 'TASKS',     sub: 'テーブル' },
-  { id: 'board',     icon: '▦', label: 'BOARD',     sub: 'カンバン' },
-  { id: 'gantt',     icon: '▬', label: 'TIMELINE',  sub: 'ガント' },
-  { id: 'invoice',   icon: '¥', label: 'INVOICE',   sub: '請求書' },
-  { id: 'report',    icon: '↗', label: 'REPORT',    sub: 'レポート' },
-  { id: 'discord',   icon: '✦', label: 'DISCORD',   sub: 'ピッピ' },
-  { id: 'settings',  icon: '⚙', label: 'SETTINGS',  sub: '設定' },
+const NAV: {id:View; icon:string; label:string}[] = [
+  {id:'dashboard', icon:'◈', label:'Overview'},
+  {id:'table',     icon:'≡', label:'Tasks'},
+  {id:'board',     icon:'⊞', label:'Board'},
+  {id:'gantt',     icon:'▤', label:'Timeline'},
+  {id:'invoice',   icon:'¥', label:'Invoice'},
+  {id:'report',    icon:'↗', label:'Report'},
+  {id:'discord',   icon:'✦', label:'Discord'},
+  {id:'settings',  icon:'⊙', label:'Settings'},
 ];
+
+/* ── Background mesh ── */
+function BgMesh() {
+  return (
+    <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,overflow:'hidden'}}>
+      {/* Grid */}
+      <div style={{
+        position:'absolute',inset:0,
+        backgroundImage:`
+          linear-gradient(rgba(0,255,163,.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0,255,163,.025) 1px, transparent 1px)
+        `,
+        backgroundSize:'48px 48px',
+      }}/>
+      {/* Aurora top-left */}
+      <div style={{position:'absolute',top:-200,left:-150,width:600,height:500,
+        background:'radial-gradient(ellipse, rgba(0,255,163,.07) 0%, transparent 65%)',
+        filter:'blur(40px)',
+      }}/>
+      {/* Aurora bottom-right */}
+      <div style={{position:'absolute',bottom:-200,right:-100,width:500,height:400,
+        background:'radial-gradient(ellipse, rgba(75,142,255,.06) 0%, transparent 65%)',
+        filter:'blur(40px)',
+      }}/>
+      {/* Subtle center */}
+      <div style={{position:'absolute',top:'40%',left:'50%',transform:'translate(-50%,-50%)',
+        width:800,height:400,
+        background:'radial-gradient(ellipse, rgba(176,106,255,.03) 0%, transparent 65%)',
+        filter:'blur(60px)',
+      }}/>
+    </div>
+  );
+}
 
 export default function App() {
   const store = useStore();
   const [view, setView] = useState<View>('dashboard');
-  const [collapsed, setCollapsed] = useState(false);
+  const [col, setCol] = useState(false);
 
-  if (store.loading) {
-    return (
-      <div style={{ height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg)', flexDirection:'column', gap:16 }}>
-        <div style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--accent)', letterSpacing:'0.2em' }}>BIRDFLIP</div>
-        <div style={{ width:120, height:1, background:'var(--border2)', position:'relative', overflow:'hidden' }}>
-          <div style={{ position:'absolute', top:0, left:0, width:40, height:'100%', background:'var(--accent)', animation:'scan 1s linear infinite', transform:'rotate(0deg)' }} />
+  /* ── Loading ── */
+  if (store.loading) return (
+    <div style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)',flexDirection:'column',gap:24}}>
+      <BgMesh/>
+      <div style={{position:'relative',zIndex:1,textAlign:'center'}}>
+        <div style={{fontFamily:'var(--head)',fontSize:48,color:'var(--tx)',letterSpacing:4,lineHeight:1}}>
+          BIRD<span style={{color:'var(--ac)'}}>FLIP</span>
         </div>
-        <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.1em' }}>LOADING...</div>
+        <div style={{marginTop:20,height:1,width:120,margin:'20px auto 0',background:'var(--bd1)',position:'relative',overflow:'hidden'}}>
+          <div style={{position:'absolute',top:0,height:'100%',width:40,background:'linear-gradient(90deg,transparent,var(--ac),transparent)',animation:'scan 1.4s ease-in-out infinite'}}/>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (!store.user) {
-    return (
-      <div style={{ height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg)' }}>
-        <div style={{ textAlign:'center', width:280 }}>
-          {/* Logo */}
-          <div style={{ marginBottom:32 }}>
-            <div style={{ fontFamily:'var(--head)', fontSize:32, fontWeight:800, color:'var(--accent)', letterSpacing:'-1px', lineHeight:1 }}>
-              BIRD<span style={{ color:'var(--text3)' }}>FLIP</span>
-            </div>
-            <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.25em', marginTop:6 }}>
-              VIDEO PRODUCTION MANAGEMENT
-            </div>
+  /* ── Login ── */
+  if (!store.user) return (
+    <div style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)',overflow:'hidden'}}>
+      <BgMesh/>
+      <div className="anim-up" style={{position:'relative',zIndex:1,width:360}}>
+        {/* Logo */}
+        <div style={{textAlign:'center',marginBottom:36}}>
+          <div style={{
+            display:'inline-flex',alignItems:'center',gap:12,
+            background:'linear-gradient(135deg,rgba(0,255,163,.1),rgba(0,255,163,.03))',
+            border:'1px solid rgba(0,255,163,.2)',
+            borderRadius:14,padding:'10px 20px',
+            boxShadow:'0 0 40px rgba(0,255,163,.1)',
+            marginBottom:16,
+          }}>
+            <span style={{fontSize:22}}>🐤</span>
+            <span style={{fontFamily:'var(--head)',fontSize:26,letterSpacing:2,color:'var(--tx)'}}>
+              BIRD<span style={{color:'var(--ac)'}}>FLIP</span>
+            </span>
           </div>
-          {/* Divider */}
-          <div style={{ height:1, background:'linear-gradient(90deg, transparent, var(--border2), transparent)', margin:'0 0 28px' }} />
-          {/* Login */}
-          <button onClick={() => store.login()} style={{
-            width:'100%', padding:'13px 24px',
-            background:'var(--surface)', border:'1px solid var(--border2)',
-            borderRadius:10, color:'var(--text)', fontSize:12, fontWeight:600,
-            cursor:'pointer', fontFamily:'var(--head)', letterSpacing:'0.05em',
-            transition:'all 0.15s',
-          }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(74,244,200,0.4)')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border2)')}
-          >
-            G  oogle でログイン
+          <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--tx2)',letterSpacing:'.22em'}}>
+            VIDEO PRODUCTION OS
+          </div>
+        </div>
+
+        {/* Card */}
+        <div style={{
+          background:'linear-gradient(145deg, rgba(13,22,40,.95), rgba(8,15,26,.98))',
+          border:'1px solid var(--bd1)',
+          borderRadius:20,padding:'32px',
+          boxShadow:'0 32px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06)',
+        }}>
+          <div style={{fontFamily:'var(--body)',fontSize:17,fontWeight:700,marginBottom:6,letterSpacing:'-.3px'}}>
+            ようこそ
+          </div>
+          <div style={{fontSize:12,color:'var(--tx2)',marginBottom:28,lineHeight:1.6}}>
+            Googleアカウントでサインインしてください
+          </div>
+
+          <button className="btn btn-ac" style={{width:'100%',padding:'13px 24px',fontSize:13}}
+            onClick={()=>store.login()}>
+            <svg width="16" height="16" viewBox="0 0 24 24">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#00ffa3" opacity=".9"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#00ffa3" opacity=".65"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#00ffa3" opacity=".45"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#00ffa3" opacity=".8"/>
+            </svg>
+            Google でサインイン
           </button>
-          <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', marginTop:16, letterSpacing:'0.08em' }}>
+
+          <div style={{marginTop:20,paddingTop:16,borderTop:'1px solid var(--bd0)',fontFamily:'var(--mono)',fontSize:9,color:'var(--tx3)',letterSpacing:'.12em',textAlign:'center'}}>
             © BIRD FLIP INC. 中村
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  const active = store.data.tasks.filter(t => t.status !== 'done' && t.status !== 'stop');
-  const late = active.filter(t => t.deadline && t.deadline < store.today());
-  const dcEnabled = store.data.discord?.enabled && store.data.discord?.webhookUrl;
-  const thisM = store.thisMonth();
-  const monthDone = store.data.tasks.filter(t => t.status === 'done' && (t.completedAt || '').startsWith(thisM));
-  const monthRev = monthDone.reduce((a, t) => a + (t.revenue || 0), 0);
+  const active = store.data.tasks.filter(t=>t.status!=='done'&&t.status!=='stop');
+  const late   = active.filter(t=>t.deadline&&t.deadline<store.today());
+  const dcOk   = store.data.discord?.enabled&&store.data.discord?.webhookUrl;
+  const gcOk   = store.data.gcal?.enabled&&store.data.gcal?.accessToken;
+  const mRev   = store.data.tasks
+    .filter(t=>t.status==='done'&&(t.completedAt||'').startsWith(store.thisMonth()))
+    .reduce((a,t)=>a+(t.revenue||0),0);
 
   return (
-    <div className="grain" style={{ height:'100vh', display:'flex', background:'var(--bg)', color:'var(--text)', overflow:'hidden' }}>
-      {/* ── SIDEBAR ── */}
+    <div style={{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--tx)',overflow:'hidden',position:'relative'}}>
+      <BgMesh/>
+
+      {/* ══ SIDEBAR ══ */}
       <aside style={{
-        width: collapsed ? 48 : 200,
-        flexShrink: 0,
-        borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column',
-        transition: 'width 0.2s ease',
-        overflow: 'hidden',
-        background: 'linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%)',
+        width:col?50:200, flexShrink:0,
+        borderRight:'1px solid var(--bd0)',
+        display:'flex',flexDirection:'column',
+        transition:'width .22s cubic-bezier(.4,0,.2,1)',
+        overflow:'hidden',
+        position:'relative',zIndex:10,
+        background:'linear-gradient(180deg, rgba(5,10,16,.98) 0%, rgba(2,4,8,.99) 100%)',
+        backdropFilter:'blur(24px)',
       }}>
         {/* Logo */}
-        <div style={{ padding: collapsed ? '14px 0' : '14px 14px', borderBottom: '1px solid var(--border)', display:'flex', alignItems:'center', gap:8, justifyContent: collapsed ? 'center' : 'flex-start' }}>
-          <button onClick={() => setCollapsed(!collapsed)}
-            style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'var(--accent)', fontSize:14, flexShrink:0 }}>
-            {collapsed ? '▶' : '◀'}
-          </button>
-          {!collapsed && (
-            <div style={{ minWidth:0, flex:1 }}>
-              <div style={{ fontFamily:'var(--head)', fontSize:13, fontWeight:800, color:'var(--accent)', letterSpacing:'-0.3px', lineHeight:1 }}>BIRDFLIP</div>
-              {store.syncing && <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--text3)', letterSpacing:'0.15em', marginTop:2 }}>SYNCING...</div>}
+        <div style={{
+          height:54,display:'flex',alignItems:'center',
+          padding:col?'0 11px':'0 14px',
+          borderBottom:'1px solid var(--bd0)',
+          gap:9,flexShrink:0,
+          justifyContent:col?'center':'flex-start',
+        }}>
+          <button onClick={()=>setCol(!col)} style={{
+            width:26,height:26,borderRadius:7,
+            background:'var(--g0)',border:'1px solid var(--bd1)',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            color:'var(--tx2)',fontSize:10,flexShrink:0,
+            transition:'all .15s',
+          }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(0,255,163,.35)';e.currentTarget.style.color='var(--ac)';}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--bd1)';e.currentTarget.style.color='var(--tx2)';}}
+          >{col?'▶':'◀'}</button>
+          {!col&&(
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:'var(--head)',fontSize:16,letterSpacing:2,lineHeight:1,color:'var(--tx)'}}>
+                BIRD<span style={{color:'var(--ac)'}}>FLIP</span>
+              </div>
+              {store.syncing&&<div style={{fontFamily:'var(--mono)',fontSize:7,color:'var(--ac)',opacity:.6,letterSpacing:'.15em',marginTop:2}}>SAVING...</div>}
             </div>
           )}
         </div>
 
         {/* Nav */}
-        <nav style={{ flex:1, padding: '8px 6px', overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
-          {NAV.map(n => (
-            <button key={n.id} onClick={() => setView(n.id)}
-              className={`nav-item${view === n.id ? ' active' : ''}`}
-              style={{ justifyContent: collapsed ? 'center' : 'flex-start', padding: collapsed ? '9px 0' : '8px 10px', width:'100%', textAlign:'left', background:'none', border: view===n.id ? '1px solid rgba(74,244,200,0.18)' : '1px solid transparent' }}>
-              <span style={{ fontSize:12, width:16, textAlign:'center', flexShrink:0 }}>{n.icon}</span>
-              {!collapsed && (
-                <span style={{ lineHeight:1.1 }}>
-                  <div style={{ fontFamily:'var(--mono)', fontSize:9, fontWeight:700, letterSpacing:'0.12em' }}>{n.label}</div>
-                </span>
-              )}
-              {!collapsed && n.id === 'discord' && dcEnabled && (
-                <span style={{ marginLeft:'auto', width:5, height:5, borderRadius:'50%', background:'#22c55e', flexShrink:0 }} />
-              )}
+        <nav style={{flex:1,padding:'8px 6px',overflowY:'auto',display:'flex',flexDirection:'column',gap:2}}>
+          {NAV.map(n=>(
+            <button key={n.id} onClick={()=>setView(n.id)}
+              className={`nav-btn${view===n.id?' on':''}`}
+              style={{justifyContent:col?'center':'flex-start',padding:col?'9px 0':'8px 10px'}}>
+              <span style={{fontSize:14,width:18,textAlign:'center',flexShrink:0,lineHeight:1}}>{n.icon}</span>
+              {!col&&<span>{n.label}</span>}
+              {!col&&n.id==='discord'&&dcOk&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'var(--ac)',boxShadow:'0 0 8px var(--ac)',flexShrink:0}}/>}
+              {!col&&n.id==='settings'&&gcOk&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'var(--blue)',flexShrink:0}}/>}
             </button>
           ))}
         </nav>
 
-        {/* Footer stats */}
-        {!collapsed && (
-          <div style={{ padding:'12px 14px', borderTop:'1px solid var(--border)' }}>
-            <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.08em', marginBottom:6 }}>
-              {store.thisMonth().replace('-', '/')} STATUS
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span style={{ fontSize:9, color:'var(--text3)' }}>進行中</span>
-                <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--text2)' }}>{active.length}</span>
-              </div>
-              {late.length > 0 && (
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <span style={{ fontSize:9, color:'var(--red)' }}>⚠ 遅延</span>
-                  <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--red)' }}>{late.length}</span>
+        {/* Footer KPI */}
+        {!col&&(
+          <div style={{padding:'12px 12px 14px',borderTop:'1px solid var(--bd0)',flexShrink:0}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
+              {[
+                {l:'進行中',v:String(active.length),c:'var(--tx)'},
+                {l:'遅延',v:String(late.length),c:late.length>0?'var(--red)':'var(--tx2)',
+                  bg:late.length>0?'rgba(255,77,109,.06)':'var(--g0)',
+                  bd:late.length>0?'rgba(255,77,109,.2)':'var(--bd0)'},
+              ].map(k=>(
+                <div key={k.l} style={{background:k.bg||'var(--g0)',border:`1px solid ${k.bd||'var(--bd0)'}`,borderRadius:8,padding:'7px 9px'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:7,color:'var(--tx2)',letterSpacing:'.12em',marginBottom:3}}>{k.l}</div>
+                  <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:600,color:k.c,letterSpacing:'-1px',lineHeight:1}}>{k.v}</div>
                 </div>
-              )}
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span style={{ fontSize:9, color:'var(--text3)' }}>今月売上</span>
-                <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--accent)' }}>¥{(monthRev/10000).toFixed(0)}万</span>
-              </div>
+              ))}
             </div>
-            {/* User */}
-            <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6 }}>
-              {store.user.photoURL && <img src={store.user.photoURL} style={{ width:20, height:20, borderRadius:'50%', border:'1px solid var(--border2)' }} />}
-              <span style={{ fontSize:9, color:'var(--text3)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{store.user.displayName || store.user.email}</span>
-              <button onClick={() => { if (confirm('ログアウトしますか？')) store.logout(); }}
-                style={{ fontSize:11, color:'var(--text3)', background:'none', border:'none', cursor:'pointer', padding:0, lineHeight:1 }}
-                title="ログアウト">⏻</button>
+            <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--ac)',marginBottom:10,letterSpacing:'-.3px'}}>
+              ¥{(mRev/10000).toFixed(1)}<span style={{fontSize:8,color:'var(--tx2)',marginLeft:2}}>万 今月</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:7}}>
+              {store.user.photoURL
+                ?<img src={store.user.photoURL} style={{width:22,height:22,borderRadius:'50%',border:'1px solid var(--bd1)',flexShrink:0}}/>
+                :<div style={{width:22,height:22,borderRadius:'50%',background:'rgba(0,255,163,.1)',border:'1px solid rgba(0,255,163,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,flexShrink:0}}>A</div>
+              }
+              <span style={{fontSize:10,color:'var(--tx2)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {store.user.displayName?.split(' ')[0]||store.user.email?.split('@')[0]}
+              </span>
+              <button onClick={()=>{if(confirm('ログアウト？'))store.logout();}}
+                style={{background:'none',border:'none',color:'var(--tx3)',fontSize:12,padding:'2px 4px',lineHeight:1,transition:'color .15s'}}
+                onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+                onMouseLeave={e=>e.currentTarget.style.color='var(--tx3)'}
+              >⏻</button>
             </div>
           </div>
         )}
       </aside>
 
-      {/* ── MAIN ── */}
-      <main style={{ flex:1, overflowY:'auto', overflowX:'hidden', position:'relative' }}>
-        {/* Toast */}
-        {store.migrateMsg && (
-          <div className="animate-fade-in" style={{
-            position:'absolute', top:16, right:16, zIndex:50,
-            background:'var(--surface2)', border:'1px solid var(--border2)',
-            borderRadius:8, padding:'10px 16px', fontSize:11, color:'var(--text)',
-            boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
+      {/* ══ MAIN ══ */}
+      <main style={{flex:1,overflowY:'auto',overflowX:'hidden',position:'relative',zIndex:1}}>
+        {/* GCal sync toast */}
+        {store.gcalSyncing&&(
+          <div style={{position:'fixed',bottom:20,right:20,zIndex:100,
+            background:'var(--s1)',border:'1px solid rgba(0,255,163,.3)',
+            borderRadius:10,padding:'9px 16px',
+            display:'flex',alignItems:'center',gap:8,
+            fontSize:11,color:'var(--ac)',
+            boxShadow:'0 0 24px rgba(0,255,163,.12)',
+            backdropFilter:'blur(20px)',
+          }}>
+            <span className="anim-blink" style={{width:6,height:6,borderRadius:'50%',background:'var(--ac)',display:'block'}}/>
+            GCal 同期中...
+          </div>
+        )}
+        {/* Save toast */}
+        {store.migrateMsg&&(
+          <div className="anim-up" style={{position:'fixed',top:18,right:18,zIndex:100,
+            background:'rgba(8,15,26,.95)',border:'1px solid var(--bd2)',
+            borderRadius:12,padding:'12px 20px',fontSize:12,color:'var(--tx)',
+            boxShadow:'0 20px 60px rgba(0,0,0,.6)',backdropFilter:'blur(24px)',
           }}>
             {store.migrateMsg}
           </div>
         )}
-        {view === 'dashboard' && <Dashboard store={store} onNavigate={(v: View) => setView(v)} />}
-        {view === 'table'     && <TaskTable store={store} />}
-        {view === 'board'     && <TaskBoard store={store} />}
-        {view === 'gantt'     && <GanttView store={store} />}
-        {view === 'invoice'   && <InvoiceView store={store} />}
-        {view === 'report'    && <ReportView store={store} />}
-        {view === 'settings'  && <SettingsView store={store} />}
-        {view === 'discord'   && <DiscordView store={store} />}
+
+        {view==='dashboard'&&<Dashboard  store={store} onNavigate={(v:View)=>setView(v)}/>}
+        {view==='table'    &&<TaskTable  store={store}/>}
+        {view==='board'    &&<TaskBoard  store={store}/>}
+        {view==='gantt'    &&<GanttView  store={store}/>}
+        {view==='invoice'  &&<InvoiceView store={store}/>}
+        {view==='report'   &&<ReportView store={store}/>}
+        {view==='settings' &&<SettingsView store={store}/>}
+        {view==='discord'  &&<DiscordView store={store}/>}
       </main>
     </div>
   );
