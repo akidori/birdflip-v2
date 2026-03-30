@@ -93,10 +93,12 @@ td.item-num{color:#999;font-size:10px}
       </div>
       <div class="from-section">
         <div class="co-name">${escHtml(co.name || '')}</div>
-        ${co.address ? `<div>${escHtml(co.address)}</div>` : ''}
+        ${co.zip ? `<div>〒${escHtml(co.zip)}</div>` : ''}
+        ${co.addr ? `<div>${escHtml(co.addr)}</div>` : ''}
         ${co.tel ? `<div>TEL: ${escHtml(co.tel)}</div>` : ''}
         ${co.email ? `<div>${escHtml(co.email)}</div>` : ''}
-        ${co.bankInfo ? `<div style="margin-top:6px;white-space:pre-line;font-size:9px">${escHtml(co.bankInfo)}</div>` : ''}
+        ${co.reg ? `<div style="margin-top:4px;font-size:9px">登録番号: ${escHtml(co.reg)}</div>` : ''}
+        ${(co.bank||co.aNo) ? `<div style="margin-top:6px;font-size:9px">${[co.bank&&co.branch?escHtml(co.bank)+' '+escHtml(co.branch):co.bank?escHtml(co.bank):'',co.aType&&co.aNo?escHtml(co.aType)+' '+escHtml(co.aNo):'',co.aName?escHtml(co.aName):''].filter(Boolean).join('<br>')}</div>` : ''}
       </div>
     </div>
     <div class="amount-box">

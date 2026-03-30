@@ -52,40 +52,42 @@ export function SettingsView({ store }: { store: Store }) {
 function CompanyTab({ store }: { store: Store }) {
   const co = store.data.company;
   const fields: { key: keyof typeof co; label: string; placeholder?: string; half?: boolean }[] = [
-    { key: 'name',   label: '会社名',           placeholder: '株式会社BirdFlip' },
-    { key: 'zip',    label: '郵便番号', half: true, placeholder: '000-0000' },
-    { key: 'addr',   label: '住所',             placeholder: '東京都渋谷区...' },
-    { key: 'tel',    label: '電話番号', half: true, placeholder: '03-0000-0000' },
-    { key: 'email',  label: 'メール',  half: true, placeholder: 'info@example.com' },
+    { key: 'name',   label: '会社名',            placeholder: '株式会社BirdFlip' },
+    { key: 'zip',    label: '郵便番号', half:true, placeholder: '000-0000' },
+    { key: 'addr',   label: '住所',              placeholder: '東京都渋谷区...' },
+    { key: 'tel',    label: '電話番号', half:true, placeholder: '03-0000-0000' },
+    { key: 'email',  label: 'メール',  half:true,  placeholder: 'info@example.com' },
     { key: 'reg',    label: 'インボイス登録番号', placeholder: 'T1234567890123' },
-    { key: 'bank',   label: '銀行名',   half: true, placeholder: '○○銀行' },
-    { key: 'branch', label: '支店名',   half: true, placeholder: '渋谷支店' },
-    { key: 'aType',  label: '口座種別', half: true },
-    { key: 'aNo',    label: '口座番号', half: true, placeholder: '1234567' },
-    { key: 'aName',  label: '口座名義',          placeholder: 'カ）バードフリップ' },
+    { key: 'bank',   label: '銀行名',  half:true,  placeholder: '○○銀行' },
+    { key: 'branch', label: '支店名',  half:true,  placeholder: '渋谷支店' },
+    { key: 'aType',  label: '口座種別',half:true },
+    { key: 'aNo',    label: '口座番号',half:true,  placeholder: '1234567' },
+    { key: 'aName',  label: '口座名義',           placeholder: 'カ）バードフリップ' },
   ];
 
+  const S = { label:{ display:'block', fontFamily:'var(--mono)', fontSize:9, color:'var(--tx2)', letterSpacing:'.12em', marginBottom:5 } as const };
+
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-xl p-5">
-      <div className="text-xs font-bold text-zinc-300 mb-4">会社・請求書情報</div>
-      <div className="grid grid-cols-2 gap-3">
+    <div style={{ background:'var(--s0)', border:'1px solid var(--bd0)', borderRadius:14, padding:24 }}>
+      <div className="label" style={{ marginBottom:16 }}>会社・請求書情報</div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
         {fields.map(f => (
-          <div key={f.key} className={f.half ? '' : 'col-span-2'}>
-            <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">{f.label}</label>
+          <div key={f.key} style={{ gridColumn: f.half ? undefined : '1 / -1' }}>
+            <label style={S.label}>{f.label}</label>
             {f.key === 'aType' ? (
               <select value={co.aType} onChange={e => store.updateCompany({ aType: e.target.value })}
-                className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-2 text-xs outline-none text-zinc-300">
+                style={{ width:'100%', padding:'8px 10px', fontSize:11 }}>
                 <option>普通</option><option>当座</option>
               </select>
             ) : (
               <input value={co[f.key] || ''} onChange={e => store.updateCompany({ [f.key]: e.target.value })}
                 placeholder={f.placeholder}
-                className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-2 text-xs outline-none text-zinc-300 placeholder-zinc-600" />
+                style={{ width:'100%', padding:'8px 10px', fontSize:11, boxSizing:'border-box' }}/>
             )}
           </div>
         ))}
       </div>
-      <div className="mt-3 text-[10px] text-zinc-500">入力内容は自動保存されます</div>
+      <div style={{ marginTop:12, fontSize:10, color:'var(--tx3)', fontFamily:'var(--mono)' }}>入力内容は自動保存されます</div>
     </div>
   );
 }
@@ -101,48 +103,53 @@ function ClientsTab({ store }: { store: Store }) {
   };
 
   return (
-    <div className="space-y-3">
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
       {/* 追加フォーム */}
-      <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-xl p-4">
-        <div className="text-xs font-bold text-zinc-300 mb-3">クライアントを追加</div>
-        <div className="flex gap-2">
+      <div style={{ background:'var(--s0)', border:'1px solid var(--bd0)', borderRadius:14, padding:20 }}>
+        <div className="label" style={{ marginBottom:12 }}>クライアントを追加</div>
+        <div style={{ display:'flex', gap:8 }}>
           <input value={newName} onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            placeholder="案件名・クライアント名"
-            className="flex-1 bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-3 py-2 text-xs outline-none text-zinc-300 placeholder-zinc-600" />
-          <button onClick={handleAdd}
-            className="bg-teal-400/10 text-teal-400 border border-teal-400/20 text-xs font-medium px-4 py-2 rounded-lg hover:bg-teal-400/20 transition-colors">
-            追加
-          </button>
+            placeholder="案件名・クライアント名" maxLength={40}
+            style={{ flex:1, padding:'9px 12px', fontSize:12 }}/>
+          <button className="btn btn-ac" onClick={handleAdd}>追加</button>
         </div>
       </div>
 
       {/* クライアント一覧 */}
-      <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-xl overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-zinc-800/40 text-[10px] text-zinc-500 font-bold">
-          {store.data.clients.length}件
+      <div style={{ background:'var(--s0)', border:'1px solid var(--bd0)', borderRadius:14, overflow:'hidden' }}>
+        <div style={{ padding:'10px 16px', borderBottom:'1px solid var(--bd0)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <span className="label">CLIENTS</span>
+          <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx3)' }}>{store.data.clients.length}件</span>
         </div>
         {store.data.clients.length === 0 ? (
-          <div className="text-center py-10 text-zinc-600 text-xs">クライアントがありません</div>
+          <div style={{ textAlign:'center', padding:'32px', color:'var(--tx3)', fontFamily:'var(--mono)', fontSize:10 }}>NO CLIENTS</div>
         ) : (
-          store.data.clients.map(c => {
+          store.data.clients.map((c, i, arr) => {
             const tasks = store.data.tasks.filter(t => t.clientId === c.id);
-            const done = tasks.filter(t => t.status === 'done');
-            const rev = tasks.reduce((a, t) => a + (t.revenue || 0), 0);
+            const done  = tasks.filter(t => t.status === 'done');
+            const rev   = tasks.reduce((a, t) => a + (t.revenue || 0), 0);
             return (
-              <div key={c.id} className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800/20 last:border-0 hover:bg-zinc-800/10 group">
-                <div className="w-7 h-7 rounded-full bg-teal-400/10 flex items-center justify-center text-xs text-teal-400 font-bold flex-shrink-0">
+              <div key={c.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px',
+                borderBottom: i < arr.length-1 ? '1px solid rgba(255,255,255,.025)' : 'none',
+                transition:'background .1s' }}
+                onMouseEnter={e => e.currentTarget.style.background='rgba(0,255,163,.02)'}
+                onMouseLeave={e => e.currentTarget.style.background='transparent'}
+              >
+                <div style={{ width:32, height:32, borderRadius:'50%', background:'rgba(0,255,163,.08)',
+                  border:'1px solid rgba(0,255,163,.2)', display:'flex', alignItems:'center',
+                  justifyContent:'center', fontSize:12, fontWeight:700, color:'var(--ac)', flexShrink:0 }}>
                   {c.name.charAt(0)}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div style={{ flex:1, minWidth:0 }}>
                   <input value={c.name} onChange={e => store.updateClient(c.id, { name: e.target.value })}
-                    className="bg-transparent outline-none text-xs font-medium text-zinc-200 w-full focus:bg-zinc-800/40 rounded px-1 -ml-1" />
-                  <div className="text-[9px] text-zinc-600 mt-0.5">
+                    style={{ background:'transparent', border:'none', outline:'none', fontSize:12, fontWeight:600, color:'var(--tx)', width:'100%' }}/>
+                  <div style={{ fontSize:9, color:'var(--tx3)', fontFamily:'var(--mono)', marginTop:2 }}>
                     タスク{tasks.length}件（完了{done.length}件）{rev > 0 ? `　¥${rev.toLocaleString()}` : ''}
                   </div>
                 </div>
                 <select value={c.taxType} onChange={e => store.updateClient(c.id, { taxType: e.target.value as any })}
-                  className="bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-2 py-1 text-[10px] outline-none text-zinc-400">
+                  style={{ padding:'5px 8px', fontSize:10 }}>
                   <option value="exclusive">税別</option>
                   <option value="inclusive">税込</option>
                   <option value="none">非課税</option>
@@ -150,7 +157,9 @@ function ClientsTab({ store }: { store: Store }) {
                 <button onClick={() => {
                   if (tasks.length > 0 && !confirm(`「${c.name}」を削除しますか？\n関連タスク${tasks.length}件は残ります。`)) return;
                   store.deleteClient(c.id);
-                }} className="text-zinc-700 hover:text-red-400 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                }} style={{ background:'none', border:'none', color:'var(--tx4)', fontSize:14, cursor:'pointer', padding:'0 4px' }}
+                  onMouseEnter={e => e.currentTarget.style.color='var(--red)'}
+                  onMouseLeave={e => e.currentTarget.style.color='var(--tx4)'}>✕</button>
               </div>
             );
           })
