@@ -9,6 +9,16 @@ import { ReportView }  from './views/ReportView';
 import { SettingsView} from './views/SettingsView';
 import { DiscordView } from './views/DiscordView';
 
+/* ── BirdFlip Logo Icon ── */
+function BfLogo({size=20}:{size?:number}) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 3L4 8v8l8 5 8-5V8L12 3z" stroke="#00ffa3" strokeWidth="1.5" strokeLinejoin="round" fill="rgba(0,255,163,0.08)"/>
+      <path d="M12 3v13M4 8l8 5 8-5" stroke="#00ffa3" strokeWidth="1.5" strokeLinejoin="round" opacity="0.6"/>
+    </svg>
+  );
+}
+
 export type View = 'dashboard'|'table'|'board'|'gantt'|'invoice'|'report'|'settings'|'discord';
 
 const NAV: {id:View; icon:string; label:string}[] = [
@@ -90,7 +100,7 @@ export default function App() {
             boxShadow:'0 0 40px rgba(0,255,163,.1)',
             marginBottom:16,
           }}>
-            <span style={{fontSize:22}}>🐤</span>
+            <BfLogo size={24}/>
             <span style={{fontFamily:'var(--head)',fontSize:26,letterSpacing:2,color:'var(--tx)'}}>
               BIRD<span style={{color:'var(--ac)'}}>FLIP</span>
             </span>
