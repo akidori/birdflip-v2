@@ -18,9 +18,14 @@ export const db = getFirestore(app);
 
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
+// Google Calendar読み書き権限
+provider.addScope('https://www.googleapis.com/auth/calendar.events');
 
 export async function googleLogin() {
-  return signInWithPopup(auth, provider);
+  const result = await signInWithPopup(auth, provider);
+  // OAuthアクセストークンを返す（GCal連携で使用）
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  return { result, accessToken: credential?.accessToken || null };
 }
 
 export async function googleLogout() {

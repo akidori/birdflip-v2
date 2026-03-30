@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { WorkspaceData, Task, Client, Invoice, Company, TaskTemplate, DiscordSettings } from './types';
-import { onAuth, getUserWorkspaceId, createWorkspace, loadWorkspace, saveWorkspace, onWorkspaceChange, googleLogin, googleLogout, type User } from './firebase';
+import type { WorkspaceData, Task, Client, Invoice, Company, TaskTemplate, DiscordSettings, GCalSettings } from './types';
+import { onAuth, getUserWorkspaceId, createWorkspace, loadWorkspace, saveWorkspace, onWorkspaceChange, googleLogin as _googleLogin, googleLogout, type User } from './firebase';
+import { syncTaskToGCal, deleteTaskGCalEvents, isTokenValid, getClientColorId } from './gcal';
 
 const DEFAULT_COMPANY: Company = {
   name: '', zip: '', addr: '', tel: '', email: '',
@@ -9,7 +10,7 @@ const DEFAULT_COMPANY: Company = {
 
 const EMPTY: WorkspaceData = {
   clients: [], tasks: [], invoices: [],
-  company: DEFAULT_COMPANY, templates: [], discord: undefined, lastUpdated: ''
+  company: DEFAULT_COMPANY, templates: [], discord: undefined, gcal: undefined, lastUpdated: ''
 };
 
 function genId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
@@ -22,12 +23,19 @@ export function useStore() {
   const [wsId, setWsId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [gcalSyncing, setGcalSyncing] = useState(false);
 
   const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
   const wsIdRef = useRef<string | null>(null);
   const saveTimer = useRef<number | null>(null);
   const unsub = useRef<(() => void) | null>(null);
   const skipNext = useRef(false);
+  // 最新dataへの参照（GCal非同期コールバック内で使う）
+  const dataRef = useRef<WorkspaceData>(EMPTY);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   useEffect(() => {
     const off = onAuth(async (u) => {
@@ -40,7 +48,6 @@ export function useStore() {
         const d = await loadWorkspace(ws);
         if (d) {
           setData({ ...EMPTY, ...d });
-          // マイグレーション検知: タスクが存在してclientsも作られていたら通知
           if (d.tasks && d.tasks.length > 0) {
             setMigrateMsg(`✅ データ読込完了: タスク${d.tasks.length}件・案件${d.clients?.length || 0}件`);
             setTimeout(() => setMigrateMsg(null), 4000);
@@ -84,6 +91,30 @@ export function useStore() {
     });
   }, [debouncedSave]);
 
+  // ─── GCal同期ヘルパー ─────────────────────────────────────
+  // タスクをGCalに同期して、返ってきたイベントIDパッチをFirestoreに保存
+  const syncToGCal = useCallback(async (taskId: string) => {
+    const d = dataRef.current;
+    if (!d.gcal || !isTokenValid(d.gcal)) return;
+    const task = d.tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    setGcalSyncing(true);
+    try {
+      const patch = await syncTaskToGCal(task, d.clients, d.gcal);
+      if (Object.keys(patch).length > 0) {
+        update(d2 => {
+          const t = d2.tasks.find(x => x.id === taskId);
+          if (t) Object.assign(t, patch);
+        });
+      }
+    } catch (e) {
+      console.error('[GCal] sync error:', e);
+    } finally {
+      setGcalSyncing(false);
+    }
+  }, [update]);
+
   // === Client ===
   const addClient = useCallback((name: string) => {
     update(d => { d.clients.push({ id: genId(), name, taxType: 'exclusive' }); });
@@ -97,9 +128,10 @@ export function useStore() {
 
   // === Task ===
   const addTask = useCallback((task: Partial<Task>) => {
+    const newId = genId();
     update(d => {
       d.tasks.push({
-        id: genId(), clientId: task.clientId || '', title: task.title || '無題',
+        id: newId, clientId: task.clientId || '', title: task.title || '無題',
         status: task.status || 'todo', assignee: task.assignee || '',
         deadline: task.deadline || '', progress: task.progress || 0,
         priority: task.priority || 'medium', revenue: task.revenue || 0,
@@ -107,8 +139,14 @@ export function useStore() {
         outsourcePaid: false, phases: {}, notes: task.notes || '', completedAt: '', createdAt: today(),
       } as Task);
     });
-  }, [update]);
+    // 締切日があればGCal同期（非同期、ノンブロッキング）
+    if (task.deadline) {
+      setTimeout(() => syncToGCal(newId), 800);
+    }
+  }, [update, syncToGCal]);
+
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
+    let needGCalSync = false;
     update(d => {
       const t = d.tasks.find(x => x.id === id);
       if (!t) return;
@@ -117,10 +155,26 @@ export function useStore() {
         patch.progress = 100;
         autoAddToInvoice(d, { ...t, ...patch } as Task);
       }
+      // GCal同期が必要な変更かチェック
+      if (patch.deadline !== undefined || patch.phases !== undefined ||
+          patch.title !== undefined || patch.status !== undefined ||
+          patch.clientId !== undefined) {
+        needGCalSync = true;
+      }
       Object.assign(t, patch);
     });
-  }, [update]);
+    if (needGCalSync) {
+      setTimeout(() => syncToGCal(id), 800);
+    }
+  }, [update, syncToGCal]);
+
   const deleteTask = useCallback((id: string) => {
+    // 削除前にGCalイベントも消す
+    const task = dataRef.current.tasks.find(t => t.id === id);
+    const gcal = dataRef.current.gcal;
+    if (task && gcal && isTokenValid(gcal)) {
+      deleteTaskGCalEvents(task, gcal).catch(console.error);
+    }
     update(d => { d.tasks = d.tasks.filter(x => x.id !== id); });
   }, [update]);
 
@@ -166,9 +220,11 @@ export function useStore() {
       });
     });
   }, [update]);
+
   const updateInvoice = useCallback((id: string, patch: Partial<Invoice>) => {
     update(d => { const inv = d.invoices.find(x => x.id === id); if (inv) Object.assign(inv, patch); });
   }, [update]);
+
   const importTasksToInvoice = useCallback((invoiceId: string) => {
     update(d => {
       const inv = d.invoices.find(x => x.id === invoiceId);
@@ -177,9 +233,8 @@ export function useStore() {
         .filter(t => {
           if (t.status !== 'done') return false;
           if (t.clientId !== inv.clientId) return false;
-          // completedAt・deadline・createdAt のいずれかが対象月に一致、またはいずれも空
           const dateStr = t.completedAt || t.deadline || t.createdAt || '';
-          if (!dateStr) return true; // 日付不明の完了タスクは取込対象
+          if (!dateStr) return true;
           return dateStr.startsWith(inv.targetMonth);
         })
         .forEach(t => {
@@ -197,13 +252,68 @@ export function useStore() {
     update(d => { d.discord = { webhookUrl: '', botToken: '', channelId: '', enabled: false, ...d.discord, ...patch }; });
   }, [update]);
 
+  // === GCal設定 ===
+  const updateGCal = useCallback((patch: Partial<GCalSettings>) => {
+    update(d => {
+      d.gcal = {
+        enabled: false, accessToken: '', tokenExpiry: 0,
+        calendarId: 'primary', clientColorMap: {},
+        ...d.gcal, ...patch
+      };
+    });
+  }, [update]);
+
+  // GCal有効化（ログイン時のaccessTokenを保存）
+  const enableGCal = useCallback((accessToken: string, expiresIn = 3600) => {
+    update(d => {
+      d.gcal = {
+        enabled: true,
+        accessToken,
+        tokenExpiry: Date.now() + expiresIn * 1000,
+        calendarId: d.gcal?.calendarId || 'primary',
+        clientColorMap: d.gcal?.clientColorMap || {},
+      };
+    });
+  }, [update]);
+
+  // 全タスクをGCalに一括同期
+  const syncAllToGCal = useCallback(async () => {
+    const d = dataRef.current;
+    if (!d.gcal || !isTokenValid(d.gcal)) return;
+    setGcalSyncing(true);
+    try {
+      for (const task of d.tasks) {
+        if (task.status === 'stop') continue;
+        const patch = await syncTaskToGCal(task, d.clients, d.gcal);
+        if (Object.keys(patch).length > 0) {
+          update(d2 => {
+            const t = d2.tasks.find(x => x.id === task.id);
+            if (t) Object.assign(t, patch);
+          });
+        }
+      }
+    } finally {
+      setGcalSyncing(false);
+    }
+  }, [update]);
+
+  // Google再ログイン（calendarスコープ再取得）
+  const googleLogin = useCallback(async () => {
+    const { result, accessToken } = await _googleLogin();
+    if (accessToken) {
+      enableGCal(accessToken, 3600);
+    }
+    return result;
+  }, [enableGCal]);
+
   return {
-    data, user, wsId, loading, syncing, migrateMsg, update,
+    data, user, wsId, loading, syncing, gcalSyncing, migrateMsg, update,
     login: googleLogin, logout: googleLogout,
     addClient, updateClient, deleteClient,
     addTask, updateTask, deleteTask, applyTemplate, addTemplate, deleteTemplate,
     addInvoice, updateInvoice, importTasksToInvoice,
     updateCompany, updateDiscord,
+    updateGCal, enableGCal, syncAllToGCal,
     today, thisMonth,
   };
 }

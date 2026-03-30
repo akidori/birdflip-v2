@@ -24,6 +24,8 @@ export interface Task {
   notes: string;
   completedAt: string;
   createdAt: string;
+  gcalDeadlineEventId?: string;
+  gcalPhaseEventIds?: Record<string, string>;
 }
 
 export type TaskStatus =
@@ -109,5 +111,14 @@ export interface WorkspaceData {
   company: Company;
   templates?: TaskTemplate[];
   discord?: DiscordSettings;
+  gcal?: GCalSettings;
   lastUpdated: string;
+}
+// Google Calendar設定
+export interface GCalSettings {
+  enabled: boolean;
+  accessToken: string;       // OAuth access token
+  tokenExpiry: number;       // Unix timestamp (ms)
+  calendarId: string;        // 'primary' or custom calendar ID
+  clientColorMap: Record<string, number>; // clientId → GCal colorId (1-11)
 }

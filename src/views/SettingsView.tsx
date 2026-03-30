@@ -2,11 +2,12 @@ import { useState } from 'react';
 import type { useStore } from '../store';
 import type { TaskTemplate } from '../types';
 import { STATUS_CONFIG, type TaskStatus } from '../types';
+import { isTokenValid } from '../gcal';
 
 type Store = ReturnType<typeof useStore>;
 
 export function SettingsView({ store }: { store: Store }) {
-  const [tab, setTab] = useState<'company' | 'clients' | 'templates'>('company');
+  const [tab, setTab] = useState<'company' | 'clients' | 'templates' | 'gcal'>('company');
 
   return (
     <div className="p-5 max-w-4xl mx-auto space-y-4">
@@ -18,6 +19,7 @@ export function SettingsView({ store }: { store: Store }) {
           { id: 'company', label: '🏢 会社情報' },
           { id: 'clients', label: '📂 クライアント' },
           { id: 'templates', label: '📋 テンプレート' },
+          { id: 'gcal', label: '📅 Googleカレンダー' },
         ] as const).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -31,6 +33,7 @@ export function SettingsView({ store }: { store: Store }) {
       {tab === 'company'   && <CompanyTab store={store} />}
       {tab === 'clients'   && <ClientsTab store={store} />}
       {tab === 'templates' && <TemplatesTab store={store} />}
+      {tab === 'gcal' && <GCalTab store={store} />}
     </div>
   );
 }
@@ -285,6 +288,164 @@ function TemplatesTab({ store }: { store: Store }) {
               className="text-xs bg-teal-400/15 text-teal-400 border border-teal-400/20 rounded-lg px-4 py-1.5 font-medium hover:bg-teal-400/25">
               保存
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+//  GCalTab
+// ─────────────────────────────────────────────────────────────
+const GCAL_COLOR_NAMES: Record<number, string> = {
+  1:'ラベンダー', 2:'セージ', 3:'グレープ', 4:'フラミンゴ',
+  5:'バナナ', 6:'タンジェリン', 7:'ピーコック', 8:'ブルーベリー',
+  9:'バジル', 10:'トマト', 11:'コバルト',
+};
+const GCAL_COLOR_HEX: Record<number, string> = {
+  1:'#7986cb', 2:'#33b679', 3:'#8e24aa', 4:'#e67c73',
+  5:'#f6c026', 6:'#f5511d', 7:'#039be5', 8:'#616161',
+  9:'#0b8043', 10:'#d60000', 11:'#3f51b5',
+};
+
+function GCalTab({ store }: { store: Store }) {
+  const { data, updateGCal, enableGCal, syncAllToGCal, gcalSyncing } = store;
+  const gcal = data.gcal;
+  const connected = gcal && isTokenValid(gcal);
+  const [syncing, setSyncing] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setMsg('');
+    try {
+      await syncAllToGCal();
+      setMsg(`✅ 全タスク同期完了（${data.tasks.filter(t=>t.status!=='stop').length}件）`);
+    } catch {
+      setMsg('❌ 同期エラー');
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setMsg(''), 4000);
+    }
+  };
+
+  const setClientColor = (clientId: string, colorId: number) => {
+    updateGCal({
+      clientColorMap: { ...(gcal?.clientColorMap || {}), [clientId]: colorId }
+    });
+  };
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+
+      {/* ── 接続状態 ── */}
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'20px 24px' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+          <div>
+            <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.15em', marginBottom:4 }}>CONNECTION STATUS</div>
+            <div style={{ fontSize:13, fontWeight:700, color: connected ? '#22c55e' : 'var(--text2)' }}>
+              {connected ? '✓ Google Calendar 接続済み' : '— 未接続'}
+            </div>
+          </div>
+          {!connected ? (
+            <button className="btn-accent"
+              onClick={() => store.login()}>
+              Googleで再ログインして接続
+            </button>
+          ) : (
+            <button className="btn-ghost"
+              onClick={() => updateGCal({ enabled: false, accessToken: '' })}
+              style={{ fontSize:11 }}>
+              接続解除
+            </button>
+          )}
+        </div>
+        {connected && (
+          <div style={{ fontSize:10, color:'var(--text3)', fontFamily:'var(--mono)' }}>
+            トークン有効期限: {new Date(gcal!.tokenExpiry).toLocaleString('ja-JP')}
+          </div>
+        )}
+
+        <div style={{ marginTop:16 }}>
+          <div style={{ fontSize:10, color:'var(--text3)', marginBottom:6 }}>カレンダーID（デフォルト: primary）</div>
+          <input
+            value={gcal?.calendarId || 'primary'}
+            onChange={e => updateGCal({ calendarId: e.target.value })}
+            placeholder="primary"
+            style={{ width:280, padding:'7px 12px', fontSize:11, fontFamily:'var(--mono)' }}
+          />
+          <div style={{ fontSize:9, color:'var(--text3)', marginTop:4 }}>
+            特定のカレンダーに書き込む場合はカレンダーIDを入力。通常は primary のままでOK。
+          </div>
+        </div>
+      </div>
+
+      {/* ── 仕組みの説明 ── */}
+      <div style={{ background:'rgba(74,244,200,0.04)', border:'1px solid rgba(74,244,200,0.12)', borderRadius:10, padding:'16px 20px' }}>
+        <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--accent)', letterSpacing:'0.15em', marginBottom:10 }}>HOW IT WORKS</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {[
+            ['タスク追加', '締切日があればGCalに自動登録'],
+            ['締切日変更', 'GCalイベントの日付も自動更新'],
+            ['フェーズ日付入力', '撮影・納品など各フェーズを個別イベント登録'],
+            ['ステータス → done', 'GCalイベントをキャンセル色に変更 → 請求書に自動追加'],
+            ['タスク削除', 'GCalイベントも削除'],
+          ].map(([trigger, action]) => (
+            <div key={trigger} style={{ display:'flex', gap:12, alignItems:'flex-start', fontSize:11 }}>
+              <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--accent)', minWidth:120, flexShrink:0, marginTop:1 }}>{trigger}</span>
+              <span style={{ color:'var(--text2)' }}>→ {action}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── クライアント別カラー ── */}
+      {data.clients.length > 0 && (
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'20px 24px' }}>
+          <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.15em', marginBottom:14 }}>
+            CLIENT COLOR MAP — クライアント別カラー
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {data.clients.map(client => {
+              const colorId = gcal?.clientColorMap?.[client.id] || 7;
+              return (
+                <div key={client.id} style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ width:10, height:10, borderRadius:'50%', background: GCAL_COLOR_HEX[colorId], flexShrink:0 }} />
+                  <span style={{ fontSize:12, fontWeight:600, width:140 }}>{client.name}</span>
+                  <select
+                    value={colorId}
+                    onChange={e => setClientColor(client.id, Number(e.target.value))}
+                    style={{ padding:'5px 10px', fontSize:11, width:160 }}>
+                    {Object.entries(GCAL_COLOR_NAMES).map(([id, name]) => (
+                      <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>
+                  <div style={{ width:16, height:16, borderRadius:4, background: GCAL_COLOR_HEX[colorId] }} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 一括同期 ── */}
+      {connected && (
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'20px 24px' }}>
+          <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.15em', marginBottom:10 }}>
+            BULK SYNC — 一括同期
+          </div>
+          <div style={{ fontSize:11, color:'var(--text2)', marginBottom:14 }}>
+            既存の全タスクをGCalに同期します。初回接続時や手動で再同期したい場合に使用。
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <button className="btn-accent"
+              onClick={handleSync}
+              disabled={syncing || gcalSyncing}
+              style={{ opacity: syncing || gcalSyncing ? 0.6 : 1 }}>
+              {syncing ? '同期中...' : `🔄 全${data.tasks.filter(t=>t.status!=='stop').length}件を今すぐ同期`}
+            </button>
+            {msg && <span style={{ fontSize:11, color: msg.startsWith('✅') ? '#22c55e' : 'var(--red)', fontFamily:'var(--mono)' }}>{msg}</span>}
           </div>
         </div>
       )}
