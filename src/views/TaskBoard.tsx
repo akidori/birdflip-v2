@@ -1,212 +1,195 @@
 import { useState } from 'react';
-import { STATUS_CONFIG, type TaskStatus, type Task } from '../types';
+import { STATUS_CONFIG, type Task, type TaskStatus } from '../types';
 import type { useStore } from '../store';
 
 type Store = ReturnType<typeof useStore>;
 
-const COLUMNS: TaskStatus[] = ['todo', 'hearing', 'plan', 'shoot', 'edit', 'thumb', 'review', 'fix', 'done'];
+const PRI = {
+  urgent: { label:'URGENT', color:'#ff4d6d', glow:'0 0 8px rgba(255,77,109,.5)' },
+  high:   { label:'HIGH',   color:'#ffd166', glow:'0 0 6px rgba(255,209,102,.4)' },
+  medium: { label:'MED',    color:'#4b8eff', glow:'none' },
+  low:    { label:'LOW',    color:'#3a4a60', glow:'none' },
+} as const;
 
-// ─── タスク編集モーダル ───
-function TaskModal({ task, store, onClose }: { task: Task; store: Store; onClose: () => void }) {
-  const { updateTask, deleteTask, data } = store;
-  const sta = STATUS_CONFIG[task.status];
-  const td = store.today();
-  const isLate = task.deadline && task.deadline < td && task.status !== 'done';
-
-  return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-700/60 rounded-xl w-full max-w-md shadow-2xl"
-        onClick={e => e.stopPropagation()}>
-        {/* ヘッダー */}
-        <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-zinc-800/40">
-          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sta.color }} />
-          <input value={task.title}
-            onChange={e => updateTask(task.id, { title: e.target.value })}
-            className="flex-1 bg-transparent outline-none text-sm font-bold text-zinc-100 placeholder-zinc-600" />
-          <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 text-xs px-1">✕</button>
-        </div>
-
-        {/* フォーム */}
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">案件</label>
-              <select value={task.clientId} onChange={e => updateTask(task.id, { clientId: e.target.value })}
-                className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-1.5 text-xs outline-none text-zinc-300">
-                <option value="">—</option>
-                {data.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">ステータス</label>
-              <select value={task.status} onChange={e => updateTask(task.id, { status: e.target.value as TaskStatus })}
-                className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-1.5 text-xs outline-none text-zinc-300">
-                {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">締切</label>
-              <input type="date" value={task.deadline} onChange={e => updateTask(task.id, { deadline: e.target.value })}
-                className={`w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-1.5 text-xs outline-none ${isLate ? 'text-red-400' : 'text-zinc-300'}`} />
-            </div>
-            <div>
-              <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">担当</label>
-              <input value={task.assignee} onChange={e => updateTask(task.id, { assignee: e.target.value })}
-                placeholder="—" className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-1.5 text-xs outline-none text-zinc-300 placeholder-zinc-600" />
-            </div>
-            <div>
-              <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">売上</label>
-              <input type="number" value={task.revenue || ''} onChange={e => updateTask(task.id, { revenue: Number(e.target.value) })}
-                placeholder="0" className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-1.5 text-xs outline-none text-zinc-300 font-mono placeholder-zinc-600" />
-            </div>
-            <div>
-              <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">外注費</label>
-              <input type="number" value={task.outsourceCost || ''} onChange={e => updateTask(task.id, { outsourceCost: Number(e.target.value) })}
-                placeholder="0" className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-1.5 text-xs outline-none text-zinc-300 font-mono placeholder-zinc-600" />
-            </div>
-          </div>
-
-          {/* 進捗スライダー */}
-          <div>
-            <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1.5">
-              進捗 <span className="text-zinc-400 font-mono">{task.progress}%</span>
-            </label>
-            <input type="range" min="0" max="100" step="5" value={task.progress}
-              onChange={e => updateTask(task.id, { progress: Number(e.target.value) })}
-              className="w-full accent-teal-400" />
-          </div>
-
-          {/* メモ */}
-          <div>
-            <label className="text-[9px] text-zinc-500 font-bold tracking-wide block mb-1">メモ</label>
-            <textarea value={task.notes || ''} onChange={e => updateTask(task.id, { notes: e.target.value })}
-              rows={2} placeholder="メモを入力..."
-              className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2.5 py-1.5 text-xs outline-none text-zinc-300 placeholder-zinc-600 resize-none" />
-          </div>
-        </div>
-
-        {/* フッター */}
-        <div className="flex items-center gap-2 px-4 pb-4">
-          <button onClick={() => { if (confirm('削除？')) { deleteTask(task.id); onClose(); } }}
-            className="text-xs text-red-500/60 hover:text-red-400 px-2 py-1.5 rounded hover:bg-red-900/20 transition-colors">
-            🗑 削除
-          </button>
-          <div className="flex-1" />
-          <button onClick={onClose}
-            className="text-xs bg-teal-400/10 text-teal-400 border border-teal-400/20 rounded-lg px-4 py-1.5 font-medium hover:bg-teal-400/20 transition-colors">
-            完了
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+const COLS: { id: TaskStatus; label: string }[] = [
+  { id:'todo',    label:'未着手' },
+  { id:'hearing', label:'ヒアリング' },
+  { id:'plan',    label:'構成' },
+  { id:'shoot',   label:'撮影' },
+  { id:'edit',    label:'編集' },
+  { id:'thumb',   label:'サムネ' },
+  { id:'review',  label:'確認待ち' },
+  { id:'fix',     label:'修正' },
+  { id:'done',    label:'完了' },
+  { id:'stop',    label:'停止' },
+];
 
 export function TaskBoard({ store }: { store: Store }) {
-  const { data, addTask, updateTask } = store;
+  const { data, updateTask, addTask } = store;
   const td = store.today();
-  const [editTask, setEditTask] = useState<Task | null>(null);
-  const [addingCol, setAddingCol] = useState<TaskStatus | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [adding, setAdding] = useState<TaskStatus | null>(null);
   const [newTitle, setNewTitle] = useState('');
+  const [newClient, setNewClient] = useState('');
 
-  const handleDrop = (e: React.DragEvent, status: TaskStatus) => {
+  const tasksByStatus = (status: TaskStatus) =>
+    data.tasks
+      .filter(t => t.status === status)
+      .sort((a, b) => {
+        const po = { urgent:0, high:1, medium:2, low:3 };
+        return (po[a.priority]||2) - (po[b.priority]||2);
+      });
+
+  const handleDrop = (status: TaskStatus, e: React.DragEvent) => {
     e.preventDefault();
-    const id = e.dataTransfer.getData('taskId');
-    if (id) updateTask(id, { status });
+    if (dragging) { updateTask(dragging, { status }); setDragging(null); }
   };
 
-  const handleAddInCol = (col: TaskStatus) => {
-    if (!newTitle.trim()) { setAddingCol(null); return; }
-    addTask({ title: newTitle.trim(), status: col });
-    setNewTitle('');
-    setAddingCol(null);
+  const submitNew = (status: TaskStatus) => {
+    if (!newTitle.trim()) return;
+    addTask({ title: newTitle.trim(), clientId: newClient, status });
+    setNewTitle(''); setNewClient(''); setAdding(null);
   };
-
-  // editTaskを最新stateと同期
-  const currentEditTask = editTask ? data.tasks.find(t => t.id === editTask.id) || editTask : null;
 
   return (
-    <div className="flex h-full overflow-x-auto p-3 gap-2">
-      {editTask && currentEditTask && (
-        <TaskModal task={currentEditTask} store={store} onClose={() => setEditTask(null)} />
-      )}
-
-      {COLUMNS.map(col => {
-        const sta = STATUS_CONFIG[col];
-        const tasks = data.tasks.filter(t => t.status === col);
-        const isAddingHere = addingCol === col;
+    <div style={{ display:'flex', gap:10, padding:'20px 16px 32px', overflowX:'auto', height:'100%', boxSizing:'border-box' }}>
+      {COLS.map(col => {
+        const tasks = tasksByStatus(col.id);
+        const cfg   = STATUS_CONFIG[col.id];
+        const urgentN = tasks.filter(t => t.priority==='urgent'||t.priority==='high').length;
 
         return (
-          <div key={col} className="w-44 flex-shrink-0 flex flex-col"
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => handleDrop(e, col)}>
-
-            {/* カラムヘッダー */}
-            <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1.5">
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: sta.color }} />
-              <span className="text-[10px] font-bold text-zinc-400">{sta.label}</span>
-              <span className="text-[9px] text-zinc-700 ml-auto">{tasks.length}</span>
+          <div key={col.id}
+            style={{ minWidth:220, maxWidth:220, display:'flex', flexDirection:'column', flexShrink:0 }}
+            onDragOver={e=>e.preventDefault()}
+            onDrop={e=>handleDrop(col.id,e)}
+          >
+            {/* Column header */}
+            <div style={{
+              display:'flex', alignItems:'center', justifyContent:'space-between',
+              padding:'10px 12px', marginBottom:8,
+              background:'var(--s0)', border:'1px solid var(--bd0)',
+              borderRadius:10,
+              borderTop:`2px solid ${cfg.color}`,
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                <div style={{ width:7, height:7, borderRadius:'50%', background:cfg.color, boxShadow:`0 0 6px ${cfg.color}80` }}/>
+                <span style={{ fontFamily:'var(--head)', fontSize:13, letterSpacing:1, color:'var(--tx)' }}>{col.label.toUpperCase()}</span>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                {urgentN>0&&(
+                  <span style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--red)', background:'rgba(255,77,109,.1)', border:'1px solid rgba(255,77,109,.25)', borderRadius:10, padding:'1px 6px' }}>
+                    ⚠{urgentN}
+                  </span>
+                )}
+                <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx3)', background:'var(--s2)', borderRadius:10, padding:'2px 7px' }}>
+                  {tasks.length}
+                </span>
+              </div>
             </div>
 
-            {/* タスクカード */}
-            <div className="flex-1 space-y-1.5 overflow-y-auto pb-2">
-              {tasks.map(t => {
-                const isLate = t.deadline && t.deadline < td && col !== 'done';
-                const client = data.clients.find(c => c.id === t.clientId);
-                return (
-                  <div key={t.id}
-                    draggable
-                    onDragStart={e => e.dataTransfer.setData('taskId', t.id)}
-                    onClick={() => setEditTask(t)}
-                    className={`bg-zinc-900/80 border rounded-lg p-2.5 cursor-pointer active:cursor-grabbing hover:border-zinc-600 transition-all hover:bg-zinc-800/60 ${isLate ? 'border-red-800/50' : 'border-zinc-800/50'}`}>
-                    <div className="text-[11px] font-medium text-zinc-200 leading-tight">{t.title}</div>
-                    <div className="flex items-center gap-1.5 mt-1.5 text-[9px] text-zinc-500">
-                      {client && <span className="truncate flex-1">{client.name}</span>}
-                      {t.deadline && (
-                        <span className={`flex-shrink-0 ${isLate ? 'text-red-400 font-bold' : ''}`}>
-                          {t.deadline.slice(5)}
-                        </span>
-                      )}
-                    </div>
-                    {t.progress > 0 && t.progress < 100 && (
-                      <div className="h-0.5 bg-zinc-800 rounded-full mt-1.5 overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: t.progress + '%', background: sta.color }} />
-                      </div>
-                    )}
-                    {t.revenue ? (
-                      <div className="text-[9px] text-zinc-600 font-mono mt-1">¥{t.revenue.toLocaleString()}</div>
-                    ) : null}
-                  </div>
-                );
-              })}
+            {/* Cards */}
+            <div style={{ flex:1, display:'flex', flexDirection:'column', gap:7, overflowY:'auto', paddingBottom:8 }}>
+              {tasks.map(t => <BoardCard key={t.id} task={t} store={store} td={td}
+                onDragStart={()=>setDragging(t.id)} onDragEnd={()=>setDragging(null)}
+                isDragging={dragging===t.id}/>)}
 
-              {/* インライン追加 */}
-              {isAddingHere ? (
-                <div className="bg-zinc-900/60 border border-teal-400/20 rounded-lg p-2">
-                  <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') handleAddInCol(col);
-                      if (e.key === 'Escape') { setAddingCol(null); setNewTitle(''); }
-                    }}
+              {/* Add in column */}
+              {adding===col.id ? (
+                <div style={{ background:'var(--s1)', border:'1px solid rgba(0,255,163,.25)', borderRadius:10, padding:'10px 12px' }}>
+                  <input autoFocus value={newTitle} onChange={e=>setNewTitle(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter') submitNew(col.id); if(e.key==='Escape') setAdding(null); }}
                     placeholder="タスク名..." maxLength={60}
-                    className="bg-transparent outline-none w-full text-xs text-zinc-200 placeholder-zinc-600" />
-                  <div className="flex gap-1 mt-1.5">
-                    <button onClick={() => handleAddInCol(col)}
-                      className="text-[9px] text-teal-400 font-bold hover:text-teal-300">追加</button>
-                    <button onClick={() => { setAddingCol(null); setNewTitle(''); }}
-                      className="text-[9px] text-zinc-600 hover:text-zinc-400 ml-1">✕</button>
+                    style={{ background:'transparent', border:'none', outline:'none', width:'100%', fontSize:12, color:'var(--tx)', marginBottom:8 }}/>
+                  <select value={newClient} onChange={e=>setNewClient(e.target.value)}
+                    style={{ padding:'4px 8px', fontSize:10, width:'100%', marginBottom:8 }}>
+                    <option value="">案件なし</option>
+                    {store.data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <button className="btn btn-ac" style={{ flex:1, fontSize:10, padding:'5px' }} onClick={()=>submitNew(col.id)}>追加</button>
+                    <button onClick={()=>setAdding(null)} style={{ background:'none', border:'none', color:'var(--tx3)', cursor:'pointer', fontSize:13 }}>✕</button>
                   </div>
                 </div>
               ) : (
-                <button onClick={() => { setAddingCol(col); setNewTitle(''); }}
-                  className="w-full text-[10px] text-zinc-700 hover:text-zinc-400 py-1.5 rounded-lg hover:bg-zinc-800/30 transition-colors text-left px-2">
-                  ＋ 追加
-                </button>
+                <button onClick={()=>setAdding(col.id)} style={{
+                  background:'transparent', border:'1px dashed var(--bd1)', borderRadius:10,
+                  padding:'8px', color:'var(--tx3)', fontSize:11, cursor:'pointer', width:'100%',
+                  transition:'all .15s', fontFamily:'var(--body)',
+                }}
+                  onMouseEnter={e=>{ e.currentTarget.style.borderColor='rgba(0,255,163,.3)'; e.currentTarget.style.color='var(--ac)'; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.borderColor='var(--bd1)'; e.currentTarget.style.color='var(--tx3)'; }}
+                >＋</button>
               )}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function BoardCard({ task:t, store, td, onDragStart, onDragEnd, isDragging }:
+  { task:Task; store:Store; td:string; onDragStart:()=>void; onDragEnd:()=>void; isDragging:boolean }) {
+  const { updateTask, deleteTask, data } = store;
+  const client = data.clients.find(c=>c.id===t.clientId);
+  const isLate = t.deadline&&t.deadline<td&&t.status!=='done'&&t.status!=='stop';
+  const pri = PRI[t.priority]||PRI.medium;
+  const cfg = STATUS_CONFIG[t.status];
+  const isUrgent = t.priority==='urgent';
+
+  return (
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
+      style={{
+        background: isUrgent?'rgba(255,77,109,.06)':'linear-gradient(145deg,var(--s0),var(--bg2))',
+        border:`1px solid ${isUrgent?'rgba(255,77,109,.25)':isLate?'rgba(255,77,109,.2)':'var(--bd0)'}`,
+        borderRadius:10, padding:'11px 13px', cursor:'grab',
+        opacity: isDragging?0.4:1,
+        transition:'opacity .15s, transform .15s, box-shadow .15s',
+        transform: isDragging?'scale(0.97)':'none',
+      }}
+      onMouseEnter={e=>{ if(!isDragging){e.currentTarget.style.borderColor=isUrgent?'rgba(255,77,109,.45)':'rgba(0,255,163,.2)'; e.currentTarget.style.boxShadow=isUrgent?'0 0 12px rgba(255,77,109,.12)':'0 0 12px rgba(0,0,0,.4)'; }}}
+      onMouseLeave={e=>{ e.currentTarget.style.borderColor=isUrgent?'rgba(255,77,109,.25)':isLate?'rgba(255,77,109,.2)':'var(--bd0)'; e.currentTarget.style.boxShadow='none'; }}
+    >
+      {/* Priority + client */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:7 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <div style={{ width:5, height:5, borderRadius:'50%', background:pri.color, boxShadow:pri.glow, flexShrink:0 }}/>
+          <span style={{ fontFamily:'var(--mono)', fontSize:8, color:pri.color, letterSpacing:'.06em' }}>{pri.label}</span>
+        </div>
+        {client&&<span style={{ fontSize:9, color:'var(--tx3)', fontFamily:'var(--mono)' }}>{client.name}</span>}
+      </div>
+
+      {/* Title */}
+      <div style={{ fontSize:12, fontWeight:600, color:'var(--tx)', marginBottom:9, lineHeight:1.3 }}>{t.title}</div>
+
+      {/* Progress bar */}
+      <div className="ptrack" style={{ marginBottom:8 }}>
+        <div className="pfill" style={{ width:t.progress+'%', background:cfg.color, boxShadow:`0 0 4px ${cfg.color}60` }}/>
+      </div>
+
+      {/* Footer */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          {t.deadline&&(
+            <span style={{ fontFamily:'var(--mono)', fontSize:9, color:isLate?'var(--red)':'var(--tx3)' }}>
+              {t.deadline.slice(5).replace('-','/')}
+            </span>
+          )}
+          {t.revenue>0&&<span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx3)' }}>¥{(t.revenue/10000).toFixed(1)}万</span>}
+        </div>
+        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+          <select value={t.status} onChange={e=>updateTask(t.id,{status:e.target.value as TaskStatus})}
+            style={{ background:'transparent', border:'none', outline:'none', fontSize:9, color:cfg.color, fontFamily:'var(--mono)', cursor:'pointer' }}>
+            {Object.entries(STATUS_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <button onClick={()=>{ if(confirm('削除？')) deleteTask(t.id); }}
+            style={{ background:'none', border:'none', fontSize:11, color:'var(--tx4)', cursor:'pointer', padding:0, lineHeight:1 }}
+            onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+            onMouseLeave={e=>e.currentTarget.style.color='var(--tx4)'}
+          >✕</button>
+        </div>
+      </div>
     </div>
   );
 }

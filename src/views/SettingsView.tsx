@@ -6,39 +6,49 @@ import { isTokenValid } from '../gcal';
 
 type Store = ReturnType<typeof useStore>;
 
+const TABS = [
+  { id:'company'   as const, icon:'◈', label:'会社情報' },
+  { id:'clients'   as const, icon:'◉', label:'クライアント' },
+  { id:'templates' as const, icon:'▤', label:'テンプレート' },
+  { id:'gcal'      as const, icon:'◷', label:'Googleカレンダー' },
+];
+
 export function SettingsView({ store }: { store: Store }) {
-  const [tab, setTab] = useState<'company' | 'clients' | 'templates' | 'gcal'>('company');
+  const [tab, setTab] = useState<'company'|'clients'|'templates'|'gcal'>('company');
 
   return (
-    <div className="p-5 max-w-4xl mx-auto space-y-4">
-      <h1 className="text-sm font-bold text-zinc-200">⚙️ 設定</h1>
+    <div style={{ padding:'28px 32px 52px', maxWidth:960, margin:'0 auto' }}>
+      <div style={{ marginBottom:28 }}>
+        <div className="label" style={{ marginBottom:8 }}>CONFIGURATION</div>
+        <h1 style={{ fontFamily:'var(--head)', fontSize:32, letterSpacing:2, margin:0, lineHeight:1 }}>SETTINGS</h1>
+      </div>
 
-      {/* タブ */}
-      <div className="flex gap-1 bg-zinc-900/60 border border-zinc-800/50 rounded-xl p-1 w-fit">
-        {([
-          { id: 'company', label: '🏢 会社情報' },
-          { id: 'clients', label: '📂 クライアント' },
-          { id: 'templates', label: '📋 テンプレート' },
-          { id: 'gcal', label: '📅 Googleカレンダー' },
-        ] as const).map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              tab === t.id ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
-            }`}>
+      {/* Tabs */}
+      <div style={{ display:'flex', gap:4, marginBottom:24, background:'var(--s0)', border:'1px solid var(--bd0)', borderRadius:12, padding:5, width:'fit-content' }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            display:'flex', alignItems:'center', gap:7,
+            padding:'8px 16px', borderRadius:9, border:'none', cursor:'pointer',
+            fontFamily:'var(--body)', fontSize:11, fontWeight:600, letterSpacing:'.02em',
+            transition:'all .15s',
+            background: tab===t.id ? 'var(--s2)' : 'transparent',
+            color: tab===t.id ? 'var(--ac)' : 'var(--tx2)',
+            boxShadow: tab===t.id ? '0 0 0 1px rgba(0,255,163,.15)' : 'none',
+          }}>
+            <span style={{ fontFamily:'var(--mono)', fontSize:12 }}>{t.icon}</span>
             {t.label}
           </button>
         ))}
       </div>
 
-      {tab === 'company'   && <CompanyTab store={store} />}
-      {tab === 'clients'   && <ClientsTab store={store} />}
-      {tab === 'templates' && <TemplatesTab store={store} />}
-      {tab === 'gcal' && <GCalTab store={store} />}
+      {tab==='company'   && <CompanyTab store={store}/>}
+      {tab==='clients'   && <ClientsTab store={store}/>}
+      {tab==='templates' && <TemplatesTab store={store}/>}
+      {tab==='gcal'      && <GCalTab store={store}/>}
     </div>
   );
 }
 
-// ─── 会社情報 ───
 function CompanyTab({ store }: { store: Store }) {
   const co = store.data.company;
   const fields: { key: keyof typeof co; label: string; placeholder?: string; half?: boolean }[] = [

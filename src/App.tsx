@@ -145,6 +145,8 @@ export default function App() {
 
   const active = store.data.tasks.filter(t=>t.status!=='done'&&t.status!=='stop');
   const late   = active.filter(t=>t.deadline&&t.deadline<store.today());
+  const urgent = active.filter(t=>t.priority==='urgent');
+  const high   = active.filter(t=>t.priority==='high');
   const dcOk   = store.data.discord?.enabled&&store.data.discord?.webhookUrl;
   const gcOk   = store.data.gcal?.enabled&&store.data.gcal?.accessToken;
   const mRev   = store.data.tasks
@@ -213,17 +215,34 @@ export default function App() {
           <div style={{padding:'12px 12px 14px',borderTop:'1px solid var(--bd0)',flexShrink:0}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
               {[
-                {l:'進行中',v:String(active.length),c:'var(--tx)'},
+                {l:'進行中',v:String(active.length),c:'var(--tx)',bg:'var(--g0)',bd:'var(--bd0)'},
                 {l:'遅延',v:String(late.length),c:late.length>0?'var(--red)':'var(--tx2)',
                   bg:late.length>0?'rgba(255,77,109,.06)':'var(--g0)',
                   bd:late.length>0?'rgba(255,77,109,.2)':'var(--bd0)'},
               ].map(k=>(
-                <div key={k.l} style={{background:k.bg||'var(--g0)',border:`1px solid ${k.bd||'var(--bd0)'}`,borderRadius:8,padding:'7px 9px'}}>
+                <div key={k.l} style={{background:k.bg,border:`1px solid ${k.bd}`,borderRadius:8,padding:'7px 9px'}}>
                   <div style={{fontFamily:'var(--mono)',fontSize:7,color:'var(--tx2)',letterSpacing:'.12em',marginBottom:3}}>{k.l}</div>
                   <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:600,color:k.c,letterSpacing:'-1px',lineHeight:1}}>{k.v}</div>
                 </div>
               ))}
             </div>
+            {/* 優先度インジケーター */}
+            {(urgent.length>0||high.length>0)&&(
+              <div style={{display:'flex',gap:5,marginBottom:8,flexWrap:'wrap'}}>
+                {urgent.length>0&&(
+                  <div style={{display:'flex',alignItems:'center',gap:4,background:'rgba(255,77,109,.08)',border:'1px solid rgba(255,77,109,.2)',borderRadius:6,padding:'3px 7px'}}>
+                    <div style={{width:5,height:5,borderRadius:'50%',background:'var(--red)',boxShadow:'0 0 5px var(--red)'}}/>
+                    <span style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--red)',letterSpacing:'.08em'}}>URGENT {urgent.length}</span>
+                  </div>
+                )}
+                {high.length>0&&(
+                  <div style={{display:'flex',alignItems:'center',gap:4,background:'rgba(255,209,102,.06)',border:'1px solid rgba(255,209,102,.18)',borderRadius:6,padding:'3px 7px'}}>
+                    <div style={{width:5,height:5,borderRadius:'50%',background:'var(--gold)'}}/>
+                    <span style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--gold)',letterSpacing:'.08em'}}>HIGH {high.length}</span>
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--ac)',marginBottom:10,letterSpacing:'-.3px'}}>
               ¥{(mRev/10000).toFixed(1)}<span style={{fontSize:8,color:'var(--tx2)',marginLeft:2}}>万 今月</span>
             </div>

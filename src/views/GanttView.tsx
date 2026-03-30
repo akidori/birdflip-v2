@@ -1,200 +1,165 @@
-import { useRef } from 'react';
-import { STATUS_CONFIG } from '../types';
+import { useState } from 'react';
+import { STATUS_CONFIG, PHASES } from '../types';
 import type { useStore } from '../store';
 
 type Store = ReturnType<typeof useStore>;
 
+const PRI_COLOR = { urgent:'#ff4d6d', high:'#ffd166', medium:'#4b8eff', low:'#3a4a60' };
+
 export function GanttView({ store }: { store: Store }) {
   const { data, updateTask } = store;
+  const [filterClient, setFilter] = useState('all');
   const td = store.today();
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const tasks = data.tasks
-    .filter(t => t.status !== 'stop')
-    .sort((a, b) => (a.deadline || 'z').localeCompare(b.deadline || 'z'));
+    .filter(t => t.status!=='stop')
+    .filter(t => filterClient==='all'||t.clientId===filterClient)
+    .sort((a,b)=>(a.deadline||'z').localeCompare(b.deadline||'z'));
 
-  const todayDate = new Date(td);
-  const rangeStart = new Date(todayDate); rangeStart.setDate(rangeStart.getDate() - 7);
-  const rangeEnd = new Date(todayDate); rangeEnd.setDate(rangeEnd.getDate() + 49);
-  const totalDays = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 864e5);
-  const dayW = 30;
-  const rowH = 36;
-  const leftW = 200;
+  // 表示月範囲を計算（前月〜3ヶ月後）
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const endDate   = new Date(now.getFullYear(), now.getMonth() + 3, 31);
 
-  const todayOffset = Math.round((todayDate.getTime() - rangeStart.getTime()) / 864e5);
-
-  const fmtDate = (d: Date) => d.toISOString().split('T')[0];
-
-  // スクロール位置を今日に合わせる
-  const initScroll = (el: HTMLDivElement | null) => {
-    if (el && el.scrollLeft === 0) {
-      el.scrollLeft = Math.max(0, (todayOffset - 3) * dayW);
-    }
-  };
-
-  // 週単位のグループ
-  const weeks: { label: string; start: number; days: number }[] = [];
-  let weekStart = 0;
-  for (let d = 0; d < totalDays; d++) {
-    const dt = new Date(rangeStart); dt.setDate(rangeStart.getDate() + d);
-    if (dt.getDay() === 1 || d === 0) {
-      if (weeks.length > 0) weeks[weeks.length - 1].days = d - weekStart;
-      weeks.push({ label: `${dt.getMonth() + 1}/${dt.getDate()}週`, start: d, days: 0 });
-      weekStart = d;
-    }
+  // 月リスト
+  const months: { year: number; month: number; label: string }[] = [];
+  const cur = new Date(startDate);
+  while (cur <= endDate) {
+    months.push({ year:cur.getFullYear(), month:cur.getMonth()+1, label:`${cur.getMonth()+1}月` });
+    cur.setMonth(cur.getMonth()+1);
   }
-  if (weeks.length > 0) weeks[weeks.length - 1].days = totalDays - weekStart;
+
+  const totalDays = Math.ceil((endDate.getTime()-startDate.getTime())/86400000);
+  const dateToX = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const days = Math.floor((d.getTime()-startDate.getTime())/86400000);
+    return Math.max(0,Math.min(100, days/totalDays*100));
+  };
+  const todayX = dateToX(td);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* ヘッダー */}
-      <div className="px-4 py-2.5 border-b border-zinc-800/50 flex items-center gap-3 bg-zinc-950/80 flex-shrink-0">
-        <span className="text-xs font-bold text-zinc-300">📅 ガントチャート</span>
-        <span className="text-[10px] text-zinc-500">{tasks.length}件</span>
-        <div className="flex items-center gap-3 ml-auto text-[10px] text-zinc-500">
-          <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-sm bg-teal-400/50" />進行中</span>
-          <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500/50" />完了</span>
-          <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rotate-45 inline-block bg-orange-400/80" style={{ borderRadius: 2 }} />締切</span>
+    <div style={{ padding:'24px 28px 48px', maxWidth:1400, margin:'0 auto' }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:24 }}>
+        <div>
+          <div className="label" style={{ marginBottom:8 }}>TIMELINE</div>
+          <h1 style={{ fontFamily:'var(--head)', fontSize:32, letterSpacing:2, margin:0, lineHeight:1 }}>GANTT</h1>
         </div>
+        <select value={filterClient} onChange={e=>setFilter(e.target.value)}
+          style={{ padding:'8px 12px', fontSize:11 }}>
+          <option value="all">全案件</option>
+          {data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* 左固定: タスク名 */}
-        <div className="flex-shrink-0 border-r border-zinc-800/50 bg-zinc-950 z-10"
-          style={{ width: leftW }}>
-          {/* ヘッダー2行分の高さ */}
-          <div style={{ height: rowH * 2 }} className="border-b border-zinc-800/50 flex items-end px-3 pb-1">
-            <span className="text-[10px] text-zinc-500 font-bold">タスク名</span>
+      {tasks.length===0 ? (
+        <div style={{ textAlign:'center', padding:'60px 0', color:'var(--tx3)' }}>
+          <div className="label">NO TASKS</div>
+        </div>
+      ) : (
+        <div style={{ background:'var(--s0)', border:'1px solid var(--bd0)', borderRadius:16, overflow:'hidden' }}>
+
+          {/* Month header */}
+          <div style={{ display:'grid', gridTemplateColumns:'280px 1fr', borderBottom:'1px solid var(--bd0)' }}>
+            <div style={{ padding:'10px 16px', borderRight:'1px solid var(--bd0)' }}>
+              <span className="label">TASK</span>
+            </div>
+            <div style={{ display:'flex', position:'relative' }}>
+              {months.map((m,i) => (
+                <div key={i} style={{ flex:1, padding:'10px 8px', borderRight:i<months.length-1?'1px solid var(--bd0)':'none', textAlign:'center' }}>
+                  <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx2)' }}>{m.label}</span>
+                </div>
+              ))}
+              {/* Today marker in header */}
+              <div style={{ position:'absolute', left:`${todayX}%`, top:0, bottom:0, width:1, background:'rgba(0,255,163,.4)', pointerEvents:'none' }}/>
+            </div>
           </div>
-          {tasks.map(t => {
-            const sta = STATUS_CONFIG[t.status];
-            const isLate = t.deadline && t.deadline < td && t.status !== 'done';
-            const client = data.clients.find(c => c.id === t.clientId);
+
+          {/* Rows */}
+          {tasks.map((t, i) => {
+            const client = data.clients.find(c=>c.id===t.clientId);
+            const cfg = STATUS_CONFIG[t.status];
+            const priColor = PRI_COLOR[t.priority] || PRI_COLOR.medium;
+            const isLate = t.deadline&&t.deadline<td&&t.status!=='done';
+
             return (
-              <div key={t.id} style={{ height: rowH }}
-                className="border-b border-zinc-800/20 flex items-center gap-1.5 px-2 hover:bg-zinc-800/20 cursor-default">
-                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: sta.color }} />
-                <div className="min-w-0">
-                  <div className={`text-[11px] truncate ${isLate ? 'text-red-400' : 'text-zinc-300'}`}>{t.title}</div>
-                  {client && <div className="text-[9px] text-zinc-600 truncate">{client.name}</div>}
+              <div key={t.id} style={{ display:'grid', gridTemplateColumns:'280px 1fr', borderBottom: i<tasks.length-1?'1px solid rgba(255,255,255,.03)':'none' }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(0,255,163,.02)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+              >
+                {/* Left: task info */}
+                <div style={{ padding:'10px 16px', borderRight:'1px solid var(--bd0)', display:'flex', alignItems:'center', gap:8 }}>
+                  <div style={{ width:3, height:28, borderRadius:2, background:priColor, flexShrink:0, opacity:t.priority==='low'?0.2:1, boxShadow:t.priority==='urgent'?`0 0 6px ${priColor}`:'none' }}/>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:11, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'var(--tx)' }}>{t.title}</div>
+                    <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:3 }}>
+                      {client&&<span style={{ fontSize:9, color:'var(--tx3)', fontFamily:'var(--mono)' }}>{client.name}</span>}
+                      <span className="badge" style={{ color:cfg.color, borderColor:cfg.color+'28', background:cfg.color+'0c', fontSize:8 }}>{cfg.label}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: timeline bar */}
+                <div style={{ position:'relative', padding:'8px 0' }}>
+                  {/* Today line */}
+                  <div style={{ position:'absolute', left:`${todayX}%`, top:0, bottom:0, width:1, background:'rgba(0,255,163,.25)', pointerEvents:'none', zIndex:2 }}/>
+
+                  {/* Deadline bar */}
+                  {t.deadline&&(
+                    <div style={{ position:'absolute', left:`${Math.max(0,dateToX(t.deadline)-2)}%`, top:'50%', transform:'translateY(-50%)', zIndex:3 }}>
+                      <div style={{ width:10, height:10, borderRadius:2, background:isLate?'var(--red)':cfg.color, boxShadow:isLate?'0 0 8px var(--red)':'none', transform:'rotate(45deg)' }}/>
+                    </div>
+                  )}
+
+                  {/* Phase dots */}
+                  {Object.entries(t.phases||{}).map(([phaseName, dateStr]) => {
+                    if (!dateStr) return null;
+                    const x = dateToX(dateStr);
+                    return (
+                      <div key={phaseName} style={{ position:'absolute', left:`${x}%`, top:'50%', transform:'translate(-50%,-50%)', zIndex:2 }}>
+                        <div title={`${phaseName}: ${dateStr}`} style={{
+                          width:7, height:7, borderRadius:'50%', background:'var(--blue)',
+                          border:'1px solid var(--bg)',
+                          cursor:'default',
+                        }}/>
+                      </div>
+                    );
+                  })}
+
+                  {/* Phase editor on hover — click to set phase dates */}
+                  <div style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', display:'flex', gap:4, zIndex:4 }}>
+                    {t.deadline&&(
+                      <input type="date" value={t.deadline}
+                        onChange={e=>updateTask(t.id,{deadline:e.target.value})}
+                        style={{ padding:'3px 6px', fontSize:9, width:110, opacity:0.8, fontFamily:'var(--mono)' }}/>
+                    )}
+                    {!t.deadline&&(
+                      <input type="date" value=""
+                        onChange={e=>updateTask(t.id,{deadline:e.target.value})}
+                        placeholder="締切設定"
+                        style={{ padding:'3px 6px', fontSize:9, width:110, opacity:0.5 }}/>
+                    )}
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
 
-        {/* 右: タイムライン (横スクロール) */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden" ref={el => { scrollRef.current = el; initScroll(el); }}>
-          <div style={{ width: totalDays * dayW, position: 'relative' }}>
-
-            {/* 週ラベル行 */}
-            <div style={{ height: rowH }} className="border-b border-zinc-800/20 flex items-end">
-              {weeks.map((w, i) => (
-                <div key={i} className="border-r border-zinc-800/30 flex-shrink-0 px-1 pb-0.5"
-                  style={{ width: w.days * dayW }}>
-                  <span className="text-[9px] text-zinc-600">{w.label}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* 日付ヘッダー行 */}
-            <div style={{ height: rowH }} className="border-b border-zinc-800/50 flex">
-              {Array.from({ length: totalDays }, (_, d) => {
-                const dt = new Date(rangeStart); dt.setDate(rangeStart.getDate() + d);
-                const isToday = fmtDate(dt) === td;
-                const isSun = dt.getDay() === 0;
-                const isSat = dt.getDay() === 6;
-                return (
-                  <div key={d} className={`flex-shrink-0 border-r text-center flex flex-col justify-center
-                    ${isToday ? 'bg-teal-400/10 border-teal-400/30' : 'border-zinc-800/10'}
-                    ${(isSun || isSat) && !isToday ? 'bg-zinc-800/10' : ''}`}
-                    style={{ width: dayW }}>
-                    <div className={`text-[8px] ${isToday ? 'text-teal-400' : isSun ? 'text-red-400/60' : isSat ? 'text-blue-400/50' : 'text-zinc-700'}`}>
-                      {'日月火水木金土'[dt.getDay()]}
-                    </div>
-                    <div className={`text-[10px] font-mono ${isToday ? 'text-teal-400 font-bold' : 'text-zinc-500'}`}>
-                      {dt.getDate()}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* タスク行 */}
-            {tasks.map(t => {
-              const sta = STATUS_CONFIG[t.status];
-              const dlDate = t.deadline ? new Date(t.deadline) : null;
-              const dlDay = dlDate ? Math.round((dlDate.getTime() - rangeStart.getTime()) / 864e5) : -1;
-              const isLate = t.deadline && t.deadline < td && t.status !== 'done';
-              const isDone = t.status === 'done';
-
-              // createdAtから締切までのバー
-              const createdDate = t.createdAt ? new Date(t.createdAt) : null;
-              const startDay = createdDate
-                ? Math.max(0, Math.round((createdDate.getTime() - rangeStart.getTime()) / 864e5))
-                : -1;
-              const barEnd = dlDay >= 0 ? dlDay : -1;
-              const barWidth = (startDay >= 0 && barEnd >= startDay) ? (barEnd - startDay + 1) * dayW : 0;
-              const barLeft = startDay >= 0 ? startDay * dayW : 0;
-
-              return (
-                <div key={t.id} style={{ height: rowH }} className="border-b border-zinc-800/10 relative">
-                  {/* 週末のシェード */}
-                  {Array.from({ length: totalDays }, (_, d) => {
-                    const dt = new Date(rangeStart); dt.setDate(rangeStart.getDate() + d);
-                    return (dt.getDay() === 0 || dt.getDay() === 6)
-                      ? <div key={d} className="absolute top-0 bottom-0 bg-zinc-800/10 pointer-events-none"
-                          style={{ left: d * dayW, width: dayW }} />
-                      : null;
-                  })}
-
-                  {/* 工程バー */}
-                  {barWidth > 0 && (
-                    <div className="absolute top-1/2 -translate-y-1/2 rounded"
-                      style={{
-                        left: barLeft,
-                        width: barWidth,
-                        height: 10,
-                        background: isDone ? '#22c55e30' : sta.color + '25',
-                        border: `1px solid ${isDone ? '#22c55e60' : sta.color + '40'}`,
-                      }}>
-                      {/* 進捗 */}
-                      {t.progress > 0 && (
-                        <div className="absolute inset-y-0 left-0 rounded"
-                          style={{
-                            width: t.progress + '%',
-                            background: isDone ? '#22c55e50' : sta.color + '50',
-                          }} />
-                      )}
-                    </div>
-                  )}
-
-                  {/* 締切マーカー ◆ */}
-                  {dlDay >= 0 && dlDay < totalDays && (
-                    <div
-                      className="absolute cursor-pointer transition-transform hover:scale-125"
-                      title={`締切: ${t.deadline}`}
-                      onClick={() => {
-                        const nd = prompt('新しい締切日 (YYYY-MM-DD):', t.deadline);
-                        if (nd && /^\d{4}-\d{2}-\d{2}$/.test(nd)) updateTask(t.id, { deadline: nd });
-                      }}
-                      style={{
-                        left: dlDay * dayW + dayW / 2 - 5,
-                        top: rowH / 2 - 5,
-                        width: 10, height: 10,
-                        transform: 'rotate(45deg)',
-                        background: isDone ? '#22c55e' : isLate ? '#f87171' : sta.color,
-                        borderRadius: 2,
-                      }} />
-                  )}
-                </div>
-              );
-            })}
-
-            {/* 今日ライン */}
-            <div className="absolute top-0 bottom-0 pointer-events-none z-10"
-              style={{ left: todayOffset * dayW + dayW / 2 - 1, width: 2, background: 'rgba(94,234,212,0.4)' }} />
-          </div>
+      {/* Phase legend */}
+      <div style={{ marginTop:16, display:'flex', gap:16, alignItems:'center', flexWrap:'wrap' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div style={{ width:10, height:10, background:'var(--ac)', transform:'rotate(45deg)', borderRadius:2 }}/>
+          <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx3)' }}>締切</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div style={{ width:7, height:7, borderRadius:'50%', background:'var(--blue)', border:'1px solid var(--bg)' }}/>
+          <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx3)' }}>フェーズ</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div style={{ width:1, height:12, background:'rgba(0,255,163,.4)' }}/>
+          <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--ac)' }}>今日</span>
         </div>
       </div>
     </div>
