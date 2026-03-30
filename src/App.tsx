@@ -102,7 +102,13 @@ export default function App() {
         )}
       </aside>
 
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto relative">
+        {/* マイグレーション/保存通知 */}
+        {store.migrateMsg && (
+          <div className="absolute top-3 right-3 z-50 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-xs text-zinc-200 shadow-lg animate-in fade-in-0 slide-in-from-top-2">
+            {store.migrateMsg}
+          </div>
+        )}
         {view === 'dashboard' && <Dashboard store={store} onNavigate={(v: View) => setView(v)} />}
         {view === 'table'     && <TaskTable store={store} />}
         {view === 'board'     && <TaskBoard store={store} />}

@@ -23,6 +23,7 @@ export function useStore() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
+  const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
   const wsIdRef = useRef<string | null>(null);
   const saveTimer = useRef<number | null>(null);
   const unsub = useRef<(() => void) | null>(null);
@@ -37,7 +38,14 @@ export function useStore() {
         wsIdRef.current = ws;
         setWsId(ws);
         const d = await loadWorkspace(ws);
-        if (d) setData({ ...EMPTY, ...d });
+        if (d) {
+          setData({ ...EMPTY, ...d });
+          // マイグレーション検知: タスクが存在してclientsも作られていたら通知
+          if (d.tasks && d.tasks.length > 0) {
+            setMigrateMsg(`✅ データ読込完了: タスク${d.tasks.length}件・案件${d.clients?.length || 0}件`);
+            setTimeout(() => setMigrateMsg(null), 4000);
+          }
+        }
         if (unsub.current) unsub.current();
         unsub.current = onWorkspaceChange(ws, (remote) => {
           if (skipNext.current) { skipNext.current = false; return; }
@@ -183,7 +191,7 @@ export function useStore() {
   }, [update]);
 
   return {
-    data, user, wsId, loading, syncing, update,
+    data, user, wsId, loading, syncing, migrateMsg, update,
     login: googleLogin, logout: googleLogout,
     addClient, updateClient, deleteClient,
     addTask, updateTask, deleteTask, applyTemplate, addTemplate, deleteTemplate,
