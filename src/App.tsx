@@ -5,15 +5,21 @@ import { TaskBoard } from './views/TaskBoard';
 import { InvoiceView } from './views/InvoiceView';
 import { Dashboard } from './views/Dashboard';
 import { GanttView } from './views/GanttView';
+import { ReportView } from './views/ReportView';
+import { SettingsView } from './views/SettingsView';
+import { DiscordView } from './views/DiscordView';
 
-export type View = 'dashboard' | 'table' | 'board' | 'gantt' | 'invoice';
+export type View = 'dashboard' | 'table' | 'board' | 'gantt' | 'invoice' | 'report' | 'settings' | 'discord';
 
-const NAV: { id: View; icon: string; label: string }[] = [
+const NAV: { id: View; icon: string; label: string; group?: string }[] = [
   { id: 'dashboard', icon: '◆', label: 'ダッシュボード' },
   { id: 'table',     icon: '≡', label: 'テーブル' },
   { id: 'board',     icon: '▦', label: 'ボード' },
   { id: 'gantt',     icon: '▬', label: 'ガント' },
   { id: 'invoice',   icon: '¥', label: '請求書' },
+  { id: 'report',    icon: '📊', label: 'レポート' },
+  { id: 'discord',   icon: '💬', label: 'Discord' },
+  { id: 'settings',  icon: '⚙', label: '設定' },
 ];
 
 export default function App() {
@@ -50,9 +56,11 @@ export default function App() {
 
   const active = store.data.tasks.filter(t => t.status !== 'done' && t.status !== 'stop');
   const late = active.filter(t => t.deadline && t.deadline < store.today());
+  const dcEnabled = store.data.discord?.enabled && store.data.discord?.webhookUrl;
 
   return (
     <div className="h-screen flex bg-zinc-950 text-zinc-100 overflow-hidden">
+      {/* Sidebar */}
       <aside className={`${sidebarOpen ? 'w-52' : 'w-12'} flex-shrink-0 border-r border-zinc-800/60 flex flex-col transition-all duration-200`}>
         <div className="h-12 flex items-center gap-2 px-3 border-b border-zinc-800/40">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-lg hover:opacity-70">🐤</button>
@@ -60,7 +68,7 @@ export default function App() {
           {sidebarOpen && store.syncing && <span className="text-[9px] text-teal-400/50 ml-auto animate-pulse">☁</span>}
         </div>
 
-        <nav className="flex-1 py-2 space-y-0.5 px-1.5">
+        <nav className="flex-1 py-2 space-y-0.5 px-1.5 overflow-y-auto">
           {NAV.map(n => (
             <button key={n.id} onClick={() => setView(n.id)}
               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-xs transition-colors ${
@@ -68,8 +76,12 @@ export default function App() {
                   ? 'bg-teal-400/10 text-teal-400'
                   : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
               }`}>
-              <span className="w-4 text-center font-mono text-[11px]">{n.icon}</span>
+              <span className="w-4 text-center text-[11px]">{n.icon}</span>
               {sidebarOpen && <span className="font-medium">{n.label}</span>}
+              {/* Discord: 有効化マーク */}
+              {sidebarOpen && n.id === 'discord' && dcEnabled && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              )}
             </button>
           ))}
         </nav>
@@ -91,12 +103,14 @@ export default function App() {
       </aside>
 
       <main className="flex-1 overflow-auto">
-        {/* ★ onNavigateの型をViewに統一 */}
         {view === 'dashboard' && <Dashboard store={store} onNavigate={(v: View) => setView(v)} />}
         {view === 'table'     && <TaskTable store={store} />}
         {view === 'board'     && <TaskBoard store={store} />}
         {view === 'gantt'     && <GanttView store={store} />}
         {view === 'invoice'   && <InvoiceView store={store} />}
+        {view === 'report'    && <ReportView store={store} />}
+        {view === 'settings'  && <SettingsView store={store} />}
+        {view === 'discord'   && <DiscordView store={store} />}
       </main>
     </div>
   );

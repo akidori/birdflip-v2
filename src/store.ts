@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { WorkspaceData, Task, Client, Invoice, Company } from './types';
+import type { WorkspaceData, Task, Client, Invoice, Company, TaskTemplate, DiscordSettings } from './types';
 import { onAuth, getUserWorkspaceId, createWorkspace, loadWorkspace, saveWorkspace, onWorkspaceChange, googleLogin, googleLogout, type User } from './firebase';
 
 const DEFAULT_COMPANY: Company = {
@@ -7,7 +7,10 @@ const DEFAULT_COMPANY: Company = {
   bank: '', branch: '', aType: '普通', aNo: '', aName: '', reg: ''
 };
 
-const EMPTY: WorkspaceData = { clients: [], tasks: [], invoices: [], company: DEFAULT_COMPANY, lastUpdated: '' };
+const EMPTY: WorkspaceData = {
+  clients: [], tasks: [], invoices: [],
+  company: DEFAULT_COMPANY, templates: [], discord: undefined, lastUpdated: ''
+};
 
 function genId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 function today() { return new Date(Date.now() + 9 * 3600000).toISOString().split('T')[0]; }
@@ -20,7 +23,6 @@ export function useStore() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  // wsIdをrefでも持つ → debouncedSave内で最新値を参照
   const wsIdRef = useRef<string | null>(null);
   const saveTimer = useRef<number | null>(null);
   const unsub = useRef<(() => void) | null>(null);
@@ -35,11 +37,11 @@ export function useStore() {
         wsIdRef.current = ws;
         setWsId(ws);
         const d = await loadWorkspace(ws);
-        if (d) setData(d);
+        if (d) setData({ ...EMPTY, ...d });
         if (unsub.current) unsub.current();
         unsub.current = onWorkspaceChange(ws, (remote) => {
           if (skipNext.current) { skipNext.current = false; return; }
-          setData(remote);
+          setData({ ...EMPTY, ...remote });
         });
       } else {
         wsIdRef.current = null;
@@ -52,7 +54,6 @@ export function useStore() {
     return () => { off(); if (unsub.current) unsub.current(); };
   }, []);
 
-  // wsIdRefを使うのでdeps空 → wsIdセット前の操作も保存できる
   const debouncedSave = useCallback((next: WorkspaceData) => {
     const id = wsIdRef.current;
     if (!id) return;
@@ -75,14 +76,18 @@ export function useStore() {
     });
   }, [debouncedSave]);
 
+  // === Client ===
   const addClient = useCallback((name: string) => {
     update(d => { d.clients.push({ id: genId(), name, taxType: 'exclusive' }); });
   }, [update]);
-
   const updateClient = useCallback((id: string, patch: Partial<Client>) => {
     update(d => { const c = d.clients.find(x => x.id === id); if (c) Object.assign(c, patch); });
   }, [update]);
+  const deleteClient = useCallback((id: string) => {
+    update(d => { d.clients = d.clients.filter(x => x.id !== id); });
+  }, [update]);
 
+  // === Task ===
   const addTask = useCallback((task: Partial<Task>) => {
     update(d => {
       d.tasks.push({
@@ -91,11 +96,10 @@ export function useStore() {
         deadline: task.deadline || '', progress: task.progress || 0,
         priority: task.priority || 'medium', revenue: task.revenue || 0,
         outsourceCost: task.outsourceCost || 0, outsourceVendor: task.outsourceVendor || '',
-        outsourcePaid: false, phases: {}, notes: '', completedAt: '', createdAt: today(),
+        outsourcePaid: false, phases: {}, notes: task.notes || '', completedAt: '', createdAt: today(),
       } as Task);
     });
   }, [update]);
-
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
     update(d => {
       const t = d.tasks.find(x => x.id === id);
@@ -108,11 +112,38 @@ export function useStore() {
       Object.assign(t, patch);
     });
   }, [update]);
-
   const deleteTask = useCallback((id: string) => {
     update(d => { d.tasks = d.tasks.filter(x => x.id !== id); });
   }, [update]);
 
+  // テンプレート適用
+  const applyTemplate = useCallback((templateId: string, clientId: string) => {
+    update(d => {
+      const tpl = (d.templates || []).find(x => x.id === templateId);
+      if (!tpl) return;
+      tpl.tasks.forEach(t => {
+        d.tasks.push({
+          id: genId(), clientId, title: t.title, status: t.status,
+          assignee: '', deadline: '', progress: 0, priority: t.priority,
+          revenue: 0, outsourceCost: 0, outsourceVendor: '', outsourcePaid: false,
+          phases: {}, notes: t.notes, completedAt: '', createdAt: today(),
+        });
+      });
+    });
+  }, [update]);
+
+  const addTemplate = useCallback((tpl: Omit<TaskTemplate, 'id' | 'createdAt'>) => {
+    update(d => {
+      if (!d.templates) d.templates = [];
+      d.templates.push({ ...tpl, id: genId(), createdAt: today() });
+    });
+  }, [update]);
+
+  const deleteTemplate = useCallback((id: string) => {
+    update(d => { d.templates = (d.templates || []).filter(x => x.id !== id); });
+  }, [update]);
+
+  // === Invoice ===
   const addInvoice = useCallback((clientId: string, targetMonth?: string) => {
     update(d => {
       const m = targetMonth || thisMonth();
@@ -127,25 +158,18 @@ export function useStore() {
       });
     });
   }, [update]);
-
   const updateInvoice = useCallback((id: string, patch: Partial<Invoice>) => {
     update(d => { const inv = d.invoices.find(x => x.id === id); if (inv) Object.assign(inv, patch); });
   }, [update]);
-
   const importTasksToInvoice = useCallback((invoiceId: string) => {
     update(d => {
       const inv = d.invoices.find(x => x.id === invoiceId);
       if (!inv) return;
       d.tasks
-        .filter(t =>
-          t.status === 'done' &&
-          t.clientId === inv.clientId &&
-          (t.completedAt || t.deadline || '').startsWith(inv.targetMonth)
-        )
+        .filter(t => t.status === 'done' && t.clientId === inv.clientId && (t.completedAt || t.deadline || '').startsWith(inv.targetMonth))
         .forEach(t => {
-          if (!inv.items.some(it => it.taskId === t.id)) {
+          if (!inv.items.some(it => it.taskId === t.id))
             inv.items.push({ taskId: t.id, name: t.title, qty: 1, unitPrice: t.revenue || 0, amount: t.revenue || 0 });
-          }
         });
     });
   }, [update]);
@@ -154,13 +178,18 @@ export function useStore() {
     update(d => { Object.assign(d.company, patch); });
   }, [update]);
 
+  const updateDiscord = useCallback((patch: Partial<DiscordSettings>) => {
+    update(d => { d.discord = { webhookUrl: '', botToken: '', channelId: '', enabled: false, ...d.discord, ...patch }; });
+  }, [update]);
+
   return {
     data, user, wsId, loading, syncing, update,
     login: googleLogin, logout: googleLogout,
-    addClient, updateClient,
-    addTask, updateTask, deleteTask,
+    addClient, updateClient, deleteClient,
+    addTask, updateTask, deleteTask, applyTemplate, addTemplate, deleteTemplate,
     addInvoice, updateInvoice, importTasksToInvoice,
-    updateCompany, today, thisMonth,
+    updateCompany, updateDiscord,
+    today, thisMonth,
   };
 }
 
@@ -168,9 +197,8 @@ function autoAddToInvoice(d: WorkspaceData, t: Task) {
   if (!t.clientId || !t.revenue) return;
   const month = thisMonth();
   const inv = d.invoices.find(i => i.clientId === t.clientId && i.targetMonth === month && !i.paid);
-  if (inv && !inv.items.some(it => it.taskId === t.id)) {
+  if (inv && !inv.items.some(it => it.taskId === t.id))
     inv.items.push({ taskId: t.id, name: t.title, qty: 1, unitPrice: t.revenue || 0, amount: t.revenue || 0 });
-  }
 }
 
 export { genId, today, thisMonth };
