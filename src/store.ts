@@ -174,7 +174,14 @@ export function useStore() {
       const inv = d.invoices.find(x => x.id === invoiceId);
       if (!inv) return;
       d.tasks
-        .filter(t => t.status === 'done' && t.clientId === inv.clientId && (t.completedAt || t.deadline || '').startsWith(inv.targetMonth))
+        .filter(t => {
+          if (t.status !== 'done') return false;
+          if (t.clientId !== inv.clientId) return false;
+          // completedAt・deadline・createdAt のいずれかが対象月に一致、またはいずれも空
+          const dateStr = t.completedAt || t.deadline || t.createdAt || '';
+          if (!dateStr) return true; // 日付不明の完了タスクは取込対象
+          return dateStr.startsWith(inv.targetMonth);
+        })
         .forEach(t => {
           if (!inv.items.some(it => it.taskId === t.id))
             inv.items.push({ taskId: t.id, name: t.title, qty: 1, unitPrice: t.revenue || 0, amount: t.revenue || 0 });

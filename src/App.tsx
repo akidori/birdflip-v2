@@ -11,44 +11,65 @@ import { DiscordView } from './views/DiscordView';
 
 export type View = 'dashboard' | 'table' | 'board' | 'gantt' | 'invoice' | 'report' | 'settings' | 'discord';
 
-const NAV: { id: View; icon: string; label: string; group?: string }[] = [
-  { id: 'dashboard', icon: '◆', label: 'ダッシュボード' },
-  { id: 'table',     icon: '≡', label: 'テーブル' },
-  { id: 'board',     icon: '▦', label: 'ボード' },
-  { id: 'gantt',     icon: '▬', label: 'ガント' },
-  { id: 'invoice',   icon: '¥', label: '請求書' },
-  { id: 'report',    icon: '📊', label: 'レポート' },
-  { id: 'discord',   icon: '💬', label: 'Discord' },
-  { id: 'settings',  icon: '⚙', label: '設定' },
+const NAV: { id: View; icon: string; label: string; sub?: string }[] = [
+  { id: 'dashboard', icon: '◆', label: 'OVERVIEW',  sub: 'ダッシュボード' },
+  { id: 'table',     icon: '≡', label: 'TASKS',     sub: 'テーブル' },
+  { id: 'board',     icon: '▦', label: 'BOARD',     sub: 'カンバン' },
+  { id: 'gantt',     icon: '▬', label: 'TIMELINE',  sub: 'ガント' },
+  { id: 'invoice',   icon: '¥', label: 'INVOICE',   sub: '請求書' },
+  { id: 'report',    icon: '↗', label: 'REPORT',    sub: 'レポート' },
+  { id: 'discord',   icon: '✦', label: 'DISCORD',   sub: 'ピッピ' },
+  { id: 'settings',  icon: '⚙', label: 'SETTINGS',  sub: '設定' },
 ];
 
 export default function App() {
   const store = useStore();
   const [view, setView] = useState<View>('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
 
   if (store.loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-zinc-950 text-zinc-400">
-        <div className="text-center space-y-3">
-          <div className="text-3xl">🐤</div>
-          <div className="text-xs">読み込み中...</div>
+      <div style={{ height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg)', flexDirection:'column', gap:16 }}>
+        <div style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--accent)', letterSpacing:'0.2em' }}>BIRDFLIP</div>
+        <div style={{ width:120, height:1, background:'var(--border2)', position:'relative', overflow:'hidden' }}>
+          <div style={{ position:'absolute', top:0, left:0, width:40, height:'100%', background:'var(--accent)', animation:'scan 1s linear infinite', transform:'rotate(0deg)' }} />
         </div>
+        <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.1em' }}>LOADING...</div>
       </div>
     );
   }
 
   if (!store.user) {
     return (
-      <div className="h-screen flex items-center justify-center bg-zinc-950">
-        <div className="text-center space-y-4 max-w-xs">
-          <div className="text-4xl">🐤</div>
-          <div className="text-lg font-bold text-teal-400 tracking-wider">BIRDFLIP</div>
-          <div className="text-xs text-zinc-500">映像制作プロジェクト管理</div>
-          <button onClick={() => store.login()}
-            className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium transition-colors border border-zinc-700">
-            Googleでログイン
+      <div style={{ height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg)' }}>
+        <div style={{ textAlign:'center', width:280 }}>
+          {/* Logo */}
+          <div style={{ marginBottom:32 }}>
+            <div style={{ fontFamily:'var(--head)', fontSize:32, fontWeight:800, color:'var(--accent)', letterSpacing:'-1px', lineHeight:1 }}>
+              BIRD<span style={{ color:'var(--text3)' }}>FLIP</span>
+            </div>
+            <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.25em', marginTop:6 }}>
+              VIDEO PRODUCTION MANAGEMENT
+            </div>
+          </div>
+          {/* Divider */}
+          <div style={{ height:1, background:'linear-gradient(90deg, transparent, var(--border2), transparent)', margin:'0 0 28px' }} />
+          {/* Login */}
+          <button onClick={() => store.login()} style={{
+            width:'100%', padding:'13px 24px',
+            background:'var(--surface)', border:'1px solid var(--border2)',
+            borderRadius:10, color:'var(--text)', fontSize:12, fontWeight:600,
+            cursor:'pointer', fontFamily:'var(--head)', letterSpacing:'0.05em',
+            transition:'all 0.15s',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(74,244,200,0.4)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border2)')}
+          >
+            G  oogle でログイン
           </button>
+          <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', marginTop:16, letterSpacing:'0.08em' }}>
+            © BIRD FLIP INC. 中村
+          </div>
         </div>
       </div>
     );
@@ -57,55 +78,99 @@ export default function App() {
   const active = store.data.tasks.filter(t => t.status !== 'done' && t.status !== 'stop');
   const late = active.filter(t => t.deadline && t.deadline < store.today());
   const dcEnabled = store.data.discord?.enabled && store.data.discord?.webhookUrl;
+  const thisM = store.thisMonth();
+  const monthDone = store.data.tasks.filter(t => t.status === 'done' && (t.completedAt || '').startsWith(thisM));
+  const monthRev = monthDone.reduce((a, t) => a + (t.revenue || 0), 0);
 
   return (
-    <div className="h-screen flex bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-52' : 'w-12'} flex-shrink-0 border-r border-zinc-800/60 flex flex-col transition-all duration-200`}>
-        <div className="h-12 flex items-center gap-2 px-3 border-b border-zinc-800/40">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-lg hover:opacity-70">🐤</button>
-          {sidebarOpen && <span className="text-xs font-bold tracking-wider text-teal-400">BIRDFLIP</span>}
-          {sidebarOpen && store.syncing && <span className="text-[9px] text-teal-400/50 ml-auto animate-pulse">☁</span>}
+    <div className="grain" style={{ height:'100vh', display:'flex', background:'var(--bg)', color:'var(--text)', overflow:'hidden' }}>
+      {/* ── SIDEBAR ── */}
+      <aside style={{
+        width: collapsed ? 48 : 200,
+        flexShrink: 0,
+        borderRight: '1px solid var(--border)',
+        display: 'flex', flexDirection: 'column',
+        transition: 'width 0.2s ease',
+        overflow: 'hidden',
+        background: 'linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%)',
+      }}>
+        {/* Logo */}
+        <div style={{ padding: collapsed ? '14px 0' : '14px 14px', borderBottom: '1px solid var(--border)', display:'flex', alignItems:'center', gap:8, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+          <button onClick={() => setCollapsed(!collapsed)}
+            style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'var(--accent)', fontSize:14, flexShrink:0 }}>
+            {collapsed ? '▶' : '◀'}
+          </button>
+          {!collapsed && (
+            <div style={{ minWidth:0, flex:1 }}>
+              <div style={{ fontFamily:'var(--head)', fontSize:13, fontWeight:800, color:'var(--accent)', letterSpacing:'-0.3px', lineHeight:1 }}>BIRDFLIP</div>
+              {store.syncing && <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--text3)', letterSpacing:'0.15em', marginTop:2 }}>SYNCING...</div>}
+            </div>
+          )}
         </div>
 
-        <nav className="flex-1 py-2 space-y-0.5 px-1.5 overflow-y-auto">
+        {/* Nav */}
+        <nav style={{ flex:1, padding: '8px 6px', overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
           {NAV.map(n => (
             <button key={n.id} onClick={() => setView(n.id)}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-xs transition-colors ${
-                view === n.id
-                  ? 'bg-teal-400/10 text-teal-400'
-                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
-              }`}>
-              <span className="w-4 text-center text-[11px]">{n.icon}</span>
-              {sidebarOpen && <span className="font-medium">{n.label}</span>}
-              {/* Discord: 有効化マーク */}
-              {sidebarOpen && n.id === 'discord' && dcEnabled && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              className={`nav-item${view === n.id ? ' active' : ''}`}
+              style={{ justifyContent: collapsed ? 'center' : 'flex-start', padding: collapsed ? '9px 0' : '8px 10px', width:'100%', textAlign:'left', background:'none', border: view===n.id ? '1px solid rgba(74,244,200,0.18)' : '1px solid transparent' }}>
+              <span style={{ fontSize:12, width:16, textAlign:'center', flexShrink:0 }}>{n.icon}</span>
+              {!collapsed && (
+                <span style={{ lineHeight:1.1 }}>
+                  <div style={{ fontFamily:'var(--mono)', fontSize:9, fontWeight:700, letterSpacing:'0.12em' }}>{n.label}</div>
+                </span>
+              )}
+              {!collapsed && n.id === 'discord' && dcEnabled && (
+                <span style={{ marginLeft:'auto', width:5, height:5, borderRadius:'50%', background:'#22c55e', flexShrink:0 }} />
               )}
             </button>
           ))}
         </nav>
 
-        {sidebarOpen && (
-          <div className="p-3 border-t border-zinc-800/40 space-y-2">
-            <div className="text-[10px] text-zinc-500 space-y-0.5">
-              <div>進行中 {active.length}件</div>
-              {late.length > 0 && <div className="text-red-400">⚠ 遅延 {late.length}件</div>}
+        {/* Footer stats */}
+        {!collapsed && (
+          <div style={{ padding:'12px 14px', borderTop:'1px solid var(--border)' }}>
+            <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.08em', marginBottom:6 }}>
+              {store.thisMonth().replace('-', '/')} STATUS
             </div>
-            <div className="flex items-center gap-2">
-              {store.user.photoURL && <img src={store.user.photoURL} className="w-5 h-5 rounded-full" />}
-              <span className="text-[10px] text-zinc-500 flex-1 truncate">{store.user.displayName || store.user.email}</span>
-              <button onClick={() => { if (confirm('ログアウト？')) store.logout(); }}
-                className="text-[9px] text-zinc-600 hover:text-zinc-400">⏻</button>
+            <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:9, color:'var(--text3)' }}>進行中</span>
+                <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--text2)' }}>{active.length}</span>
+              </div>
+              {late.length > 0 && (
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontSize:9, color:'var(--red)' }}>⚠ 遅延</span>
+                  <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--red)' }}>{late.length}</span>
+                </div>
+              )}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:9, color:'var(--text3)' }}>今月売上</span>
+                <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--accent)' }}>¥{(monthRev/10000).toFixed(0)}万</span>
+              </div>
+            </div>
+            {/* User */}
+            <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6 }}>
+              {store.user.photoURL && <img src={store.user.photoURL} style={{ width:20, height:20, borderRadius:'50%', border:'1px solid var(--border2)' }} />}
+              <span style={{ fontSize:9, color:'var(--text3)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{store.user.displayName || store.user.email}</span>
+              <button onClick={() => { if (confirm('ログアウトしますか？')) store.logout(); }}
+                style={{ fontSize:11, color:'var(--text3)', background:'none', border:'none', cursor:'pointer', padding:0, lineHeight:1 }}
+                title="ログアウト">⏻</button>
             </div>
           </div>
         )}
       </aside>
 
-      <main className="flex-1 overflow-auto relative">
-        {/* マイグレーション/保存通知 */}
+      {/* ── MAIN ── */}
+      <main style={{ flex:1, overflowY:'auto', overflowX:'hidden', position:'relative' }}>
+        {/* Toast */}
         {store.migrateMsg && (
-          <div className="absolute top-3 right-3 z-50 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-xs text-zinc-200 shadow-lg animate-in fade-in-0 slide-in-from-top-2">
+          <div className="animate-fade-in" style={{
+            position:'absolute', top:16, right:16, zIndex:50,
+            background:'var(--surface2)', border:'1px solid var(--border2)',
+            borderRadius:8, padding:'10px 16px', fontSize:11, color:'var(--text)',
+            boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
+          }}>
             {store.migrateMsg}
           </div>
         )}

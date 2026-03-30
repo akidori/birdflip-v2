@@ -20,13 +20,15 @@ export function Dashboard({ store, onNavigate }: { store: Store; onNavigate: (v:
   const profit = mRev - mOut;
   const pipeline = active.reduce((a, t) => a + (t.revenue || 0), 0);
   const outRate = mRev > 0 ? Math.round(mOut / mRev * 100) : 0;
-  const profitRate = mRev > 0 ? Math.round(profit / mRev * 100) : 0;
 
   const fmt = (n: number) => '¥' + n.toLocaleString();
-  const hr = new Date().getHours();
-  const greeting = hr < 12 ? 'おはようございます' : hr < 18 ? 'お疲れさまです' : 'お疲れさまです';
+  const fmtM = (n: number) => '¥' + (n >= 10000 ? (n / 10000).toFixed(1) + '万' : n.toLocaleString());
 
-  // Group by client
+  const upcoming = active
+    .filter(t => t.deadline && t.deadline >= td)
+    .sort((a, b) => (a.deadline || '').localeCompare(b.deadline || ''))
+    .slice(0, 6);
+
   const byClient: Record<string, typeof active> = {};
   active.forEach(t => {
     const cName = data.clients.find(c => c.id === t.clientId)?.name || '未分類';
@@ -34,218 +36,207 @@ export function Dashboard({ store, onNavigate }: { store: Store; onNavigate: (v:
     byClient[cName].push(t);
   });
 
-  // Upcoming deadlines (next 7 days)
-  const upcoming = active
-    .filter(t => t.deadline && t.deadline >= td)
-    .sort((a, b) => (a.deadline || '').localeCompare(b.deadline || ''))
-    .slice(0, 5);
-
   return (
-    <div className="p-5 max-w-5xl mx-auto space-y-4">
+    <div style={{ padding:'28px 28px 40px', maxWidth:1100, margin:'0 auto' }}>
 
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-teal-400/10 border border-teal-400/20 flex items-center justify-center text-base">🐤</div>
-          <div>
-            <div className="text-sm font-bold text-zinc-200">{greeting}</div>
-            <div className="flex items-center gap-2 mt-0.5">
-              {late.length > 0 && (
-                <span className="text-[10px] font-bold text-red-400 bg-red-900/20 px-2 py-0.5 rounded-full">
-                  ⚠ {late.length}件遅延
-                </span>
-              )}
-              {todayDue.length > 0 && (
-                <span className="text-[10px] font-bold text-amber-400 bg-amber-900/20 px-2 py-0.5 rounded-full">
-                  ⚡ 今日{todayDue.length}件
-                </span>
-              )}
-              <span className="text-[10px] text-zinc-500">進行中 {active.length}件</span>
-            </div>
+      {/* ── HEADER ── */}
+      <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:28 }}>
+        <div>
+          <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.2em', marginBottom:6 }}>
+            {month.replace('-', '/')} PRODUCTION STATUS
+          </div>
+          <div style={{ fontFamily:'var(--head)', fontSize:22, fontWeight:800, color:'var(--text)', letterSpacing:'-0.5px', lineHeight:1 }}>
+            Overview
           </div>
         </div>
-        <div className="text-[10px] text-zinc-600 font-mono">{month.replace('-', '/')}</div>
+        <div style={{ display:'flex', gap:8 }}>
+          {late.length > 0 && (
+            <span className="tag" style={{ background:'rgba(255,77,109,0.1)', color:'var(--red)', border:'1px solid rgba(255,77,109,0.25)', fontSize:10 }}>
+              ⚠ 遅延 {late.length}件
+            </span>
+          )}
+          {todayDue.length > 0 && (
+            <span className="tag" style={{ background:'rgba(245,197,67,0.1)', color:'var(--gold)', border:'1px solid rgba(245,197,67,0.25)', fontSize:10 }}>
+              ⚡ 今日 {todayDue.length}件
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ── KPI Row ── */}
-      <div className="grid grid-cols-4 gap-3">
-        {/* 今月売上 — 2col相当の重みを視覚的に */}
-        <div className="col-span-2 bg-zinc-900/70 border border-zinc-800/60 rounded-xl p-4 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-teal-400/5 to-transparent pointer-events-none" />
-          <div className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase mb-2">今月の売上</div>
-          <div className="text-3xl font-black font-mono tracking-tight text-teal-400 leading-none">{fmt(mRev)}</div>
-          <div className="mt-3 flex items-center gap-4 text-[10px] text-zinc-500">
-            <span>利益率 <strong className={profitRate >= 30 ? 'text-emerald-400' : profitRate >= 0 ? 'text-amber-400' : 'text-red-400'}>{profitRate}%</strong></span>
-            <span>外注率 <strong className={outRate > 73 ? 'text-red-400' : outRate > 50 ? 'text-amber-400' : 'text-zinc-300'}>{outRate}%</strong></span>
+      {/* ── KPI GRID ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', gap:10, marginBottom:24 }}>
+
+        {/* 今月売上 - BIG */}
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'20px 24px', position:'relative', overflow:'hidden' }}>
+          <div style={{ position:'absolute', top:0, right:0, width:80, height:80, background:'radial-gradient(circle at top right, rgba(74,244,200,0.06), transparent 70%)', pointerEvents:'none' }} />
+          <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--text3)', letterSpacing:'0.18em', marginBottom:10 }}>MONTHLY REVENUE</div>
+          <div style={{ fontFamily:'var(--mono)', fontSize:30, fontWeight:700, color:'var(--accent)', letterSpacing:'-1.5px', lineHeight:1 }}>
+            {fmtM(mRev)}
+          </div>
+          <div style={{ marginTop:10, height:2, background:'rgba(74,244,200,0.08)', borderRadius:1 }}>
+            <div style={{ height:'100%', width: `${Math.min(100, mRev/1000000*100)}%`, background:'linear-gradient(90deg, var(--accent2), var(--accent))', borderRadius:1, minWidth: mRev > 0 ? 4 : 0 }} />
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', marginTop:6 }}>
+            <span style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)' }}>利益 {fmt(profit)}</span>
+            <span style={{ fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)' }}>{monthDone.length}件完了</span>
           </div>
         </div>
 
-        {/* 利益 */}
-        <KPICard
-          label="利益"
-          value={fmt(profit)}
-          sub={mRev > 0 ? profitRate + '%' : '—'}
-          color={profit >= 0 ? 'text-emerald-400' : 'text-red-400'}
-          glow={profit >= 0 ? 'from-emerald-400/5' : 'from-red-400/5'}
-        />
+        {/* 利益率 */}
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'18px 20px' }}>
+          <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--text3)', letterSpacing:'0.18em', marginBottom:8 }}>PROFIT RATE</div>
+          <div style={{ fontFamily:'var(--mono)', fontSize:24, fontWeight:700, letterSpacing:'-1px', color: profit >= 0 ? '#22c55e' : 'var(--red)' }}>
+            {mRev > 0 ? Math.round(profit/mRev*100) : 0}<span style={{ fontSize:14 }}>%</span>
+          </div>
+          <div style={{ fontSize:9, color:'var(--text3)', marginTop:6 }}>外注率 {outRate}%</div>
+        </div>
 
         {/* パイプライン */}
-        <KPICard
-          label="パイプライン"
-          value={fmt(pipeline)}
-          sub={active.length + '件進行中'}
-          color="text-zinc-200"
-          glow="from-zinc-400/5"
-        />
-      </div>
-
-      {/* ── 2col main content ── */}
-      <div className="grid grid-cols-3 gap-3">
-
-        {/* 左: 期限タスク + 直近予定 */}
-        <div className="col-span-2 space-y-3">
-
-          {/* 期限タスク */}
-          <Section
-            title={late.length > 0 || todayDue.length > 0
-              ? <span className="text-red-400">⚠ 期限タスク ({late.length + todayDue.length}件)</span>
-              : '✓ 期限タスク'
-            }
-            action={<button onClick={() => onNavigate('table')} className="text-[10px] text-teal-400 hover:underline">全て →</button>}
-          >
-            {[...late, ...todayDue].length === 0 ? (
-              <div className="text-[10px] text-zinc-500 text-center py-5">期限超過なし 🎉</div>
-            ) : (
-              <div className="space-y-1">
-                {[...late, ...todayDue].slice(0, 5).map(t => {
-                  const days = t.deadline! < td
-                    ? Math.abs(Math.round((new Date(td).getTime() - new Date(t.deadline!).getTime()) / 864e5))
-                    : 0;
-                  const client = data.clients.find(c => c.id === t.clientId);
-                  return (
-                    <div key={t.id} className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-zinc-800/30 text-xs group">
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{ background: t.deadline! < td ? '#f87171' : '#fbbf24' }} />
-                      <span className="font-medium flex-1 truncate text-zinc-200">{t.title}</span>
-                      <span className="text-zinc-500 text-[10px] flex-shrink-0">{client?.name || ''}</span>
-                      {days > 0 && (
-                        <span className="text-[9px] font-bold text-red-400 bg-red-900/20 px-1.5 py-0.5 rounded">
-                          {days}日超過
-                        </span>
-                      )}
-                      {days === 0 && <span className="text-[9px] text-amber-400">今日</span>}
-                      <span className="text-zinc-600 text-[10px] font-mono">{t.deadline?.slice(5)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Section>
-
-          {/* 直近の締め切り */}
-          {upcoming.length > 0 && (
-            <Section title="📅 直近の締め切り">
-              <div className="space-y-1">
-                {upcoming.map(t => {
-                  const client = data.clients.find(c => c.id === t.clientId);
-                  const daysLeft = Math.round((new Date(t.deadline!).getTime() - new Date(td).getTime()) / 864e5);
-                  return (
-                    <div key={t.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800/20 text-xs">
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-600 flex-shrink-0" />
-                      <span className="flex-1 truncate text-zinc-300">{t.title}</span>
-                      <span className="text-zinc-500 text-[10px]">{client?.name || ''}</span>
-                      <span className="text-[9px] font-mono text-zinc-500">{t.deadline?.slice(5)}</span>
-                      <span className={`text-[9px] font-bold ${daysLeft <= 3 ? 'text-amber-400' : 'text-zinc-500'}`}>
-                        あと{daysLeft}日
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </Section>
-          )}
-
-          {/* クイックアクション */}
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { icon: '≡', label: 'タスク', nav: 'table' },
-              { icon: '▦', label: 'ボード', nav: 'board' },
-              { icon: '▬', label: 'ガント', nav: 'gantt' },
-              { icon: '¥', label: '請求書', nav: 'invoice' },
-            ] as { icon: string; label: string; nav: View }[]).map(btn => (
-              <button key={btn.nav} onClick={() => onNavigate(btn.nav)}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-xl bg-zinc-900/60 border border-zinc-800/50 hover:border-zinc-700/60 hover:bg-zinc-800/40 transition-all text-zinc-400 hover:text-zinc-200">
-                <span className="text-base font-mono">{btn.icon}</span>
-                <span className="text-[9px] tracking-wide">{btn.label}</span>
-              </button>
-            ))}
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'18px 20px' }}>
+          <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--text3)', letterSpacing:'0.18em', marginBottom:8 }}>PIPELINE</div>
+          <div style={{ fontFamily:'var(--mono)', fontSize:20, fontWeight:700, letterSpacing:'-0.5px', color:'var(--blue)' }}>
+            {fmtM(pipeline)}
           </div>
+          <div style={{ fontSize:9, color:'var(--text3)', marginTop:6 }}>進行中 {active.length}件</div>
         </div>
 
-        {/* 右: 案件別サマリー */}
-        <Section title="📂 案件別">
-          {Object.keys(byClient).length === 0 ? (
-            <div className="text-[10px] text-zinc-500 text-center py-8">タスクがありません</div>
+        {/* 遅延 */}
+        <div style={{ background:'var(--surface)', border: late.length > 0 ? '1px solid rgba(255,77,109,0.25)' : '1px solid var(--border)', borderRadius:10, padding:'18px 20px' }}>
+          <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--text3)', letterSpacing:'0.18em', marginBottom:8 }}>OVERDUE</div>
+          <div style={{ fontFamily:'var(--mono)', fontSize:24, fontWeight:700, letterSpacing:'-1px', color: late.length > 0 ? 'var(--red)' : 'var(--text3)' }}>
+            {late.length}
+          </div>
+          <div style={{ fontSize:9, color:'var(--text3)', marginTop:6 }}>今日期限 {todayDue.length}件</div>
+        </div>
+      </div>
+
+      {/* ── MAIN 2-COL ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'1.2fr 1fr', gap:16 }}>
+
+        {/* ── UPCOMING DEADLINES ── */}
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+          <div style={{ padding:'14px 18px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.15em' }}>UPCOMING DEADLINES</div>
+            <button onClick={() => onNavigate('table')}
+              style={{ fontSize:9, color:'var(--accent)', fontFamily:'var(--mono)', background:'none', border:'none', cursor:'pointer', letterSpacing:'0.08em' }}>
+              ALL →
+            </button>
+          </div>
+          {upcoming.length === 0 ? (
+            <div style={{ padding:'24px', textAlign:'center', color:'var(--text3)', fontSize:11, fontFamily:'var(--mono)' }}>
+              NO UPCOMING DEADLINES
+            </div>
           ) : (
-            <div className="space-y-3">
-              {Object.entries(byClient).slice(0, 8).map(([name, tasks]) => {
-                const avg = Math.round(tasks.reduce((a, t) => a + t.progress, 0) / tasks.length);
-                const hasLate = tasks.some(t => t.deadline && t.deadline < td);
-                const totalRev = tasks.reduce((a, t) => a + (t.revenue || 0), 0);
+            <div>
+              {upcoming.map((t, i) => {
+                const client = data.clients.find(c => c.id === t.clientId);
+                const isLateItem = t.deadline && t.deadline < td;
+                const daysLeft = t.deadline ? Math.ceil((new Date(t.deadline).getTime() - new Date(td).getTime()) / 86400000) : null;
+                const cfg = STATUS_CONFIG[t.status];
                 return (
-                  <div key={name} className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasLate ? 'bg-red-400' : 'bg-emerald-400/60'}`} />
-                      <span className="flex-1 truncate text-zinc-300 font-medium">{name}</span>
-                      <span className="text-zinc-500 text-[10px]">{tasks.length}件</span>
+                  <div key={t.id} style={{ padding:'12px 18px', borderBottom: i < upcoming.length-1 ? '1px solid rgba(126,210,255,0.04)' : 'none', display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:6, height:6, borderRadius:'50%', background: cfg.color, flexShrink:0 }} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</div>
+                      <div style={{ fontSize:9, color:'var(--text3)', marginTop:2 }}>{client?.name || '—'}</div>
                     </div>
-                    <div className="flex items-center gap-2 pl-3">
-                      <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-teal-400/60 transition-all"
-                          style={{ width: avg + '%' }} />
+                    <div style={{ textAlign:'right', flexShrink:0 }}>
+                      <div style={{ fontFamily:'var(--mono)', fontSize:10, color: isLateItem ? 'var(--red)' : daysLeft !== null && daysLeft <= 2 ? 'var(--gold)' : 'var(--text2)' }}>
+                        {t.deadline}
                       </div>
-                      <span className="text-[9px] text-zinc-500 w-6 text-right">{avg}%</span>
+                      {daysLeft !== null && (
+                        <div style={{ fontSize:9, fontFamily:'var(--mono)', color: isLateItem ? 'var(--red)' : 'var(--text3)' }}>
+                          {isLateItem ? `${Math.abs(daysLeft)}日超過` : daysLeft === 0 ? '今日' : `${daysLeft}日後`}
+                        </div>
+                      )}
                     </div>
-                    {totalRev > 0 && (
-                      <div className="pl-3 text-[9px] text-zinc-600 font-mono">
-                        {fmt(totalRev)}
+                    <div style={{ flexShrink:0 }}>
+                      <div style={{ width:40 }}>
+                        <div className="progress-track">
+                          <div className="progress-fill" style={{ width: `${t.progress}%` }} />
+                        </div>
+                        <div style={{ fontSize:8, color:'var(--text3)', fontFamily:'var(--mono)', textAlign:'right', marginTop:2 }}>{t.progress}%</div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
-        </Section>
+        </div>
 
+        {/* ── BY CLIENT ── */}
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+          <div style={{ padding:'14px 18px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', letterSpacing:'0.15em' }}>BY CLIENT</div>
+            <button onClick={() => onNavigate('board')}
+              style={{ fontSize:9, color:'var(--accent)', fontFamily:'var(--mono)', background:'none', border:'none', cursor:'pointer', letterSpacing:'0.08em' }}>
+              BOARD →
+            </button>
+          </div>
+          {Object.keys(byClient).length === 0 ? (
+            <div style={{ padding:'24px', textAlign:'center', color:'var(--text3)', fontSize:11, fontFamily:'var(--mono)' }}>
+              NO ACTIVE TASKS
+            </div>
+          ) : (
+            <div>
+              {Object.entries(byClient).map(([name, tasks], i, arr) => {
+                const rev = tasks.reduce((a, t) => a + (t.revenue || 0), 0);
+                const lateTasks = tasks.filter(t => t.deadline && t.deadline < td);
+                return (
+                  <div key={name} style={{ padding:'12px 18px', borderBottom: i < arr.length-1 ? '1px solid rgba(126,210,255,0.04)' : 'none' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:'var(--text)' }}>{name}</div>
+                      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                        {lateTasks.length > 0 && (
+                          <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--red)' }}>⚠{lateTasks.length}</span>
+                        )}
+                        <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--text2)' }}>{fmtM(rev)}</span>
+                      </div>
+                    </div>
+                    <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                      {tasks.slice(0, 5).map(t => {
+                        const cfg = STATUS_CONFIG[t.status];
+                        return (
+                          <span key={t.id} className="tag" style={{ background: cfg.color + '18', color: cfg.color, border: `1px solid ${cfg.color}30`, fontSize:9 }}>
+                            {cfg.label}
+                          </span>
+                        );
+                      })}
+                      {tasks.length > 5 && <span style={{ fontSize:9, color:'var(--text3)' }}>+{tasks.length - 5}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-}
 
-function KPICard({ label, value, sub, color, glow }: {
-  label: string; value: string; sub: string; color: string; glow: string;
-}) {
-  return (
-    <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-xl p-4 relative overflow-hidden">
-      <div className={`absolute inset-0 bg-gradient-to-br ${glow} to-transparent pointer-events-none`} />
-      <div className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase mb-2">{label}</div>
-      <div className={`text-xl font-black font-mono tracking-tight leading-none ${color}`}>{value}</div>
-      <div className="text-[10px] text-zinc-500 mt-2">{sub}</div>
-    </div>
-  );
-}
-
-function Section({ title, action, children }: {
-  title: React.ReactNode; action?: React.ReactNode; children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-bold text-zinc-300">{title}</h3>
-        {action}
+      {/* ── QUICK ACTIONS ── */}
+      <div style={{ marginTop:16, display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+        {[
+          { id:'table' as View, icon:'≡', label:'TASKS', sub:'テーブル' },
+          { id:'board' as View, icon:'▦', label:'BOARD', sub:'カンバン' },
+          { id:'invoice' as View, icon:'¥', label:'INVOICE', sub:'請求書' },
+          { id:'report' as View, icon:'↗', label:'REPORT', sub:'レポート' },
+        ].map(item => (
+          <button key={item.id} onClick={() => onNavigate(item.id)}
+            style={{
+              background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8,
+              padding:'14px 16px', cursor:'pointer', textAlign:'left',
+              transition:'all 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(74,244,200,0.25)'; e.currentTarget.style.background = 'var(--surface2)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface)'; }}
+          >
+            <div style={{ fontFamily:'var(--mono)', fontSize:16, color:'var(--text3)', marginBottom:6 }}>{item.icon}</div>
+            <div style={{ fontFamily:'var(--mono)', fontSize:9, fontWeight:700, color:'var(--accent)', letterSpacing:'0.15em' }}>{item.label}</div>
+            <div style={{ fontSize:10, color:'var(--text3)', marginTop:2 }}>{item.sub}</div>
+          </button>
+        ))}
       </div>
-      {children}
+
     </div>
   );
 }
