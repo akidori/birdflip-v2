@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { WorkspaceData, Task, Client, Invoice, Company, TaskTemplate, DiscordSettings, GCalSettings } from './types';
+import type { WorkspaceData, Task, Client, Invoice, InvoiceItem, Company, TaskTemplate, DiscordSettings, GCalSettings } from './types';
 import { onAuth, getUserWorkspaceId, createWorkspace, loadWorkspace, saveWorkspace, onWorkspaceChange, googleLogin as _googleLogin, googleLogout, type User } from './firebase';
-import { syncTaskToGCal, deleteTaskGCalEvents, isTokenValid, getClientColorId } from './gcal';
+import { syncTaskToGCal, deleteTaskGCalEvents, isTokenValid } from './gcal';
 
 const DEFAULT_COMPANY: Company = {
   name: '', zip: '', addr: '', tel: '', email: '',
@@ -17,6 +17,40 @@ function genId() { return 't' + Date.now().toString(36) + Math.random().toString
 function today() { return new Date(Date.now() + 9 * 3600000).toISOString().split('T')[0]; }
 function thisMonth() { const d = new Date(Date.now() + 9 * 3600000); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
+// 旧Invoice → 新Invoice マイグレーション
+function migrateInvoice(inv: any): Invoice {
+  return {
+    id: inv.id || genId(),
+    clientId: inv.clientId || '',
+    targetMonth: inv.targetMonth || thisMonth(),
+    number: inv.number || '',
+    taxType: inv.taxType || 'exclusive',
+    issueDate: inv.issueDate || inv.createdAt?.split('T')[0] || today(),
+    dueDate: inv.dueDate || '',
+    paid: inv.paid || false,
+    paidAt: inv.paidAt || '',
+    note: inv.note || '',
+    items: (inv.items || []).map((it: any) => ({
+      taskId: it.taskId || '',
+      name: it.name || '',
+      qty: it.qty || 1,
+      unitPrice: it.unitPrice || 0,
+      amount: it.amount || 0,
+    })),
+    createdAt: inv.createdAt || today(),
+    locked: inv.locked || false,
+  };
+}
+
+// 請求確認トースト用の型
+export interface BillingPrompt {
+  taskId: string;
+  taskTitle: string;
+  clientName: string;
+  revenue: number;
+  suggestedMonth: string; // YYYY-MM
+}
+
 export function useStore() {
   const [data, setData] = useState<WorkspaceData>(EMPTY);
   const [user, setUser] = useState<User | null>(null);
@@ -24,18 +58,18 @@ export function useStore() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [gcalSyncing, setGcalSyncing] = useState(false);
-
   const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
+
+  // 請求確認トースト
+  const [billingPrompts, setBillingPrompts] = useState<BillingPrompt[]>([]);
+
   const wsIdRef = useRef<string | null>(null);
   const saveTimer = useRef<number | null>(null);
   const unsub = useRef<(() => void) | null>(null);
   const skipNext = useRef(false);
-  // 最新dataへの参照（GCal非同期コールバック内で使う）
   const dataRef = useRef<WorkspaceData>(EMPTY);
 
-  useEffect(() => {
-    dataRef.current = data;
-  }, [data]);
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   useEffect(() => {
     const off = onAuth(async (u) => {
@@ -47,7 +81,12 @@ export function useStore() {
         setWsId(ws);
         const d = await loadWorkspace(ws);
         if (d) {
-          setData({ ...EMPTY, ...d });
+          // マイグレーション: 旧Invoice → 新Invoice
+          const migrated = {
+            ...EMPTY, ...d,
+            invoices: (d.invoices || []).map(migrateInvoice),
+          };
+          setData(migrated);
           if (d.tasks && d.tasks.length > 0) {
             setMigrateMsg(`✅ データ読込完了: タスク${d.tasks.length}件・案件${d.clients?.length || 0}件`);
             setTimeout(() => setMigrateMsg(null), 4000);
@@ -56,11 +95,10 @@ export function useStore() {
         if (unsub.current) unsub.current();
         unsub.current = onWorkspaceChange(ws, (remote) => {
           if (skipNext.current) { skipNext.current = false; return; }
-          setData({ ...EMPTY, ...remote });
+          setData({ ...EMPTY, ...remote, invoices: (remote.invoices || []).map(migrateInvoice) });
         });
       } else {
-        wsIdRef.current = null;
-        setWsId(null);
+        wsIdRef.current = null; setWsId(null);
         setData(EMPTY);
         if (unsub.current) { unsub.current(); unsub.current = null; }
       }
@@ -91,28 +129,20 @@ export function useStore() {
     });
   }, [debouncedSave]);
 
-  // ─── GCal同期ヘルパー ─────────────────────────────────────
-  // タスクをGCalに同期して、返ってきたイベントIDパッチをFirestoreに保存
+  // ─── GCal同期 ──────────────────────────────────────
   const syncToGCal = useCallback(async (taskId: string) => {
     const d = dataRef.current;
     if (!d.gcal || !isTokenValid(d.gcal)) return;
     const task = d.tasks.find(t => t.id === taskId);
     if (!task) return;
-
     setGcalSyncing(true);
     try {
       const patch = await syncTaskToGCal(task, d.clients, d.gcal);
       if (Object.keys(patch).length > 0) {
-        update(d2 => {
-          const t = d2.tasks.find(x => x.id === taskId);
-          if (t) Object.assign(t, patch);
-        });
+        update(d2 => { const t = d2.tasks.find(x => x.id === taskId); if (t) Object.assign(t, patch); });
       }
-    } catch (e) {
-      console.error('[GCal] sync error:', e);
-    } finally {
-      setGcalSyncing(false);
-    }
+    } catch (e) { console.error('[GCal] sync error:', e); }
+    finally { setGcalSyncing(false); }
   }, [update]);
 
   // === Client ===
@@ -136,26 +166,33 @@ export function useStore() {
         deadline: task.deadline || '', progress: task.progress || 0,
         priority: task.priority || 'medium', revenue: task.revenue || 0,
         outsourceCost: task.outsourceCost || 0, outsourceVendor: task.outsourceVendor || '',
-        outsourcePaid: false, phases: {}, notes: task.notes || '', completedAt: '', createdAt: today(),
+        outsourcePaid: false, phases: {}, notes: task.notes || '',
+        completedAt: '', createdAt: today(),
+        billingMonth: undefined, billingConfirmed: false,
       } as Task);
     });
-    // 締切日があればGCal同期（非同期、ノンブロッキング）
-    if (task.deadline) {
-      setTimeout(() => syncToGCal(newId), 800);
-    }
+    if (task.deadline) setTimeout(() => syncToGCal(newId), 800);
   }, [update, syncToGCal]);
 
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
     let needGCalSync = false;
+    let newlyDone = false;
+    let doneTask: Task | null = null;
+
     update(d => {
       const t = d.tasks.find(x => x.id === id);
       if (!t) return;
       if (patch.status === 'done' && t.status !== 'done') {
         patch.completedAt = today();
         patch.progress = 100;
-        autoAddToInvoice(d, { ...t, ...patch } as Task);
+        newlyDone = true;
+        doneTask = { ...t, ...patch } as Task;
+        // billingMonthを今月に仮設定（収益があるタスクのみ）
+        if ((t.revenue || patch.revenue || 0) > 0 && !t.billingMonth) {
+          patch.billingMonth = thisMonth();
+          patch.billingConfirmed = false;
+        }
       }
-      // GCal同期が必要な変更かチェック
       if (patch.deadline !== undefined || patch.phases !== undefined ||
           patch.title !== undefined || patch.status !== undefined ||
           patch.clientId !== undefined) {
@@ -163,22 +200,85 @@ export function useStore() {
       }
       Object.assign(t, patch);
     });
-    if (needGCalSync) {
-      setTimeout(() => syncToGCal(id), 800);
+
+    // done になったタスクで収益があれば請求確認トーストを出す
+    if (newlyDone && doneTask) {
+      const d = dataRef.current;
+      const task = d.tasks.find(x => x.id === id) || doneTask!;
+      const rev = task.revenue || 0;
+      if (rev > 0 && task.clientId) {
+        const client = d.clients.find(c => c.id === task.clientId);
+        setBillingPrompts(prev => [...prev, {
+          taskId: id,
+          taskTitle: task.title,
+          clientName: client?.name || '—',
+          revenue: rev,
+          suggestedMonth: thisMonth(),
+        }]);
+      }
     }
+
+    if (needGCalSync) setTimeout(() => syncToGCal(id), 800);
   }, [update, syncToGCal]);
 
   const deleteTask = useCallback((id: string) => {
-    // 削除前にGCalイベントも消す
     const task = dataRef.current.tasks.find(t => t.id === id);
     const gcal = dataRef.current.gcal;
-    if (task && gcal && isTokenValid(gcal)) {
-      deleteTaskGCalEvents(task, gcal).catch(console.error);
-    }
+    if (task && gcal && isTokenValid(gcal)) deleteTaskGCalEvents(task, gcal).catch(console.error);
     update(d => { d.tasks = d.tasks.filter(x => x.id !== id); });
+    setBillingPrompts(prev => prev.filter(p => p.taskId !== id));
   }, [update]);
 
-  // テンプレート適用
+  // 請求確認: 承認（billingMonthを確定してInvoiceに追加）
+  const confirmBilling = useCallback((taskId: string, month: string) => {
+    update(d => {
+      const task = d.tasks.find(t => t.id === taskId);
+      if (!task) return;
+      task.billingMonth = month;
+      task.billingConfirmed = true;
+
+      // 対象月の請求書を取得or作成
+      let inv = d.invoices.find(i => i.clientId === task.clientId && i.targetMonth === month && !i.locked);
+      if (!inv) {
+        const client = d.clients.find(c => c.id === task.clientId);
+        const num = 'INV-' + month.replace('-', '') + '-' + String(d.invoices.filter(i => i.targetMonth === month).length + 1).padStart(3, '0');
+        const due = new Date(month + '-01');
+        due.setMonth(due.getMonth() + 1);
+        due.setDate(due.getDate() + 30);
+        inv = {
+          id: genId(), clientId: task.clientId, targetMonth: month, number: num,
+          taxType: client?.taxType || 'exclusive',
+          issueDate: '', dueDate: due.toISOString().split('T')[0],
+          paid: false, paidAt: '', note: '', items: [], createdAt: today(), locked: false,
+        };
+        d.invoices.push(inv);
+      }
+      // 明細に追加（重複防止）
+      if (!inv.items.some(it => it.taskId === task.id)) {
+        inv.items.push({
+          taskId: task.id, name: task.title,
+          qty: 1, unitPrice: task.revenue, amount: task.revenue,
+        });
+      }
+    });
+    setBillingPrompts(prev => prev.filter(p => p.taskId !== taskId));
+  }, [update]);
+
+  // 請求確認: 月を変更して確定
+  const confirmBillingWithMonth = useCallback((taskId: string, month: string) => {
+    confirmBilling(taskId, month);
+  }, [confirmBilling]);
+
+  // 請求確認: スキップ（後で手動追加）
+  const skipBilling = useCallback((taskId: string) => {
+    update(d => {
+      const task = d.tasks.find(t => t.id === taskId);
+      if (task) { task.billingMonth = ''; task.billingConfirmed = false; }
+    });
+    setBillingPrompts(prev => prev.filter(p => p.taskId !== taskId));
+  }, [update]);
+
+  // テンプレート
   const applyTemplate = useCallback((templateId: string, clientId: string) => {
     update(d => {
       const tpl = (d.templates || []).find(x => x.id === templateId);
@@ -189,7 +289,7 @@ export function useStore() {
           assignee: '', deadline: '', progress: 0, priority: t.priority,
           revenue: 0, outsourceCost: 0, outsourceVendor: '', outsourcePaid: false,
           phases: {}, notes: t.notes, completedAt: '', createdAt: today(),
-        });
+        } as Task);
       });
     });
   }, [update]);
@@ -209,14 +309,17 @@ export function useStore() {
   const addInvoice = useCallback((clientId: string, targetMonth?: string) => {
     update(d => {
       const m = targetMonth || thisMonth();
-      const num = 'INV-' + m.replace('-', '') + '-' + String(d.invoices.length + 1).padStart(3, '0');
-      const due = new Date(); due.setDate(due.getDate() + 30);
       const client = d.clients.find(c => c.id === clientId);
+      const num = 'INV-' + m.replace('-', '') + '-' + String(d.invoices.filter(i => i.targetMonth === m).length + 1).padStart(3, '0');
+      const due = new Date(m + '-01');
+      due.setMonth(due.getMonth() + 1);
+      due.setDate(due.getDate() + 30);
       d.invoices.push({
         id: genId(), clientId, targetMonth: m, number: num,
         taxType: client?.taxType || 'exclusive',
+        issueDate: today(),
         dueDate: due.toISOString().split('T')[0],
-        paid: false, paidAt: '', note: '', items: [], createdAt: today(),
+        paid: false, paidAt: '', note: '', items: [], createdAt: today(), locked: false,
       });
     });
   }, [update]);
@@ -225,22 +328,39 @@ export function useStore() {
     update(d => { const inv = d.invoices.find(x => x.id === id); if (inv) Object.assign(inv, patch); });
   }, [update]);
 
-  const importTasksToInvoice = useCallback((invoiceId: string) => {
+  const deleteInvoice = useCallback((id: string) => {
+    update(d => { d.invoices = d.invoices.filter(x => x.id !== id); });
+  }, [update]);
+
+  // billingConfirmed=false のタスクを手動で月次請求書に取込む
+  const importPendingTasks = useCallback((month: string, clientId: string) => {
     update(d => {
-      const inv = d.invoices.find(x => x.id === invoiceId);
+      const pending = d.tasks.filter(t =>
+        t.status === 'done' && t.clientId === clientId &&
+        (t.billingMonth === month) && !t.billingConfirmed && t.revenue > 0
+      );
+      let inv = d.invoices.find(i => i.clientId === clientId && i.targetMonth === month && !i.locked);
+      if (!inv && pending.length > 0) {
+        const client = d.clients.find(c => c.id === clientId);
+        const num = 'INV-' + month.replace('-', '') + '-' + String(d.invoices.filter(i => i.targetMonth === month).length + 1).padStart(3, '0');
+        const due = new Date(month + '-01');
+        due.setMonth(due.getMonth() + 1);
+        due.setDate(due.getDate() + 30);
+        inv = {
+          id: genId(), clientId, targetMonth: month, number: num,
+          taxType: client?.taxType || 'exclusive',
+          issueDate: today(), dueDate: due.toISOString().split('T')[0],
+          paid: false, paidAt: '', note: '', items: [], createdAt: today(), locked: false,
+        };
+        d.invoices.push(inv);
+      }
       if (!inv) return;
-      d.tasks
-        .filter(t => {
-          if (t.status !== 'done') return false;
-          if (t.clientId !== inv.clientId) return false;
-          const dateStr = t.completedAt || t.deadline || t.createdAt || '';
-          if (!dateStr) return true;
-          return dateStr.startsWith(inv.targetMonth);
-        })
-        .forEach(t => {
-          if (!inv.items.some(it => it.taskId === t.id))
-            inv.items.push({ taskId: t.id, name: t.title, qty: 1, unitPrice: t.revenue || 0, amount: t.revenue || 0 });
-        });
+      pending.forEach(t => {
+        if (!inv!.items.some(it => it.taskId === t.id)) {
+          inv!.items.push({ taskId: t.id, name: t.title, qty: 1, unitPrice: t.revenue, amount: t.revenue });
+          t.billingConfirmed = true;
+        }
+      });
     });
   }, [update]);
 
@@ -255,28 +375,17 @@ export function useStore() {
   // === GCal設定 ===
   const updateGCal = useCallback((patch: Partial<GCalSettings>) => {
     update(d => {
-      d.gcal = {
-        enabled: false, accessToken: '', tokenExpiry: 0,
-        calendarId: 'primary', clientColorMap: {},
-        ...d.gcal, ...patch
-      };
+      d.gcal = { enabled: false, accessToken: '', tokenExpiry: 0, calendarId: 'primary', clientColorMap: {}, ...d.gcal, ...patch };
     });
   }, [update]);
 
-  // GCal有効化（ログイン時のaccessTokenを保存）
   const enableGCal = useCallback((accessToken: string, expiresIn = 3600) => {
     update(d => {
-      d.gcal = {
-        enabled: true,
-        accessToken,
-        tokenExpiry: Date.now() + expiresIn * 1000,
-        calendarId: d.gcal?.calendarId || 'primary',
-        clientColorMap: d.gcal?.clientColorMap || {},
-      };
+      d.gcal = { enabled: true, accessToken, tokenExpiry: Date.now() + expiresIn * 1000,
+        calendarId: d.gcal?.calendarId || 'primary', clientColorMap: d.gcal?.clientColorMap || {} };
     });
   }, [update]);
 
-  // 全タスクをGCalに一括同期
   const syncAllToGCal = useCallback(async () => {
     const d = dataRef.current;
     if (!d.gcal || !isTokenValid(d.gcal)) return;
@@ -286,23 +395,15 @@ export function useStore() {
         if (task.status === 'stop') continue;
         const patch = await syncTaskToGCal(task, d.clients, d.gcal);
         if (Object.keys(patch).length > 0) {
-          update(d2 => {
-            const t = d2.tasks.find(x => x.id === task.id);
-            if (t) Object.assign(t, patch);
-          });
+          update(d2 => { const t = d2.tasks.find(x => x.id === task.id); if (t) Object.assign(t, patch); });
         }
       }
-    } finally {
-      setGcalSyncing(false);
-    }
+    } finally { setGcalSyncing(false); }
   }, [update]);
 
-  // Google再ログイン（calendarスコープ再取得）
   const googleLogin = useCallback(async () => {
     const { result, accessToken } = await _googleLogin();
-    if (accessToken) {
-      enableGCal(accessToken, 3600);
-    }
+    if (accessToken) enableGCal(accessToken, 3600);
     return result;
   }, [enableGCal]);
 
@@ -311,19 +412,12 @@ export function useStore() {
     login: googleLogin, logout: googleLogout,
     addClient, updateClient, deleteClient,
     addTask, updateTask, deleteTask, applyTemplate, addTemplate, deleteTemplate,
-    addInvoice, updateInvoice, importTasksToInvoice,
+    addInvoice, updateInvoice, deleteInvoice, importPendingTasks,
     updateCompany, updateDiscord,
     updateGCal, enableGCal, syncAllToGCal,
+    billingPrompts, confirmBilling, confirmBillingWithMonth, skipBilling,
     today, thisMonth,
   };
-}
-
-function autoAddToInvoice(d: WorkspaceData, t: Task) {
-  if (!t.clientId || !t.revenue) return;
-  const month = thisMonth();
-  const inv = d.invoices.find(i => i.clientId === t.clientId && i.targetMonth === month && !i.paid);
-  if (inv && !inv.items.some(it => it.taskId === t.id))
-    inv.items.push({ taskId: t.id, name: t.title, qty: 1, unitPrice: t.revenue || 0, amount: t.revenue || 0 });
 }
 
 export { genId, today, thisMonth };

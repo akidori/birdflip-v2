@@ -26,6 +26,9 @@ export interface Task {
   createdAt: string;
   gcalDeadlineEventId?: string;
   gcalPhaseEventIds?: Record<string, string>;
+  // 請求バッファ: どの月の請求に入れるか（確定前の仮置き）
+  billingMonth?: string;    // 'YYYY-MM' or '' = 未確定
+  billingConfirmed?: boolean; // trueになったらInvoiceに入済み
 }
 
 export type TaskStatus =
@@ -53,20 +56,23 @@ export interface InvoiceItem {
   qty: number;
   unitPrice: number;
   amount: number;
+  tax?: number; // 明細個別の税額（任意）
 }
 
 export interface Invoice {
   id: string;
   clientId: string;
-  targetMonth: string;
+  targetMonth: string; // 'YYYY-MM'
   number: string;
   taxType: 'exclusive' | 'inclusive' | 'none';
-  dueDate: string;
+  issueDate: string;   // 発行日
+  dueDate: string;     // 支払期限
   paid: boolean;
   paidAt: string;
   note: string;
   items: InvoiceItem[];
   createdAt: string;
+  locked: boolean;     // true = PDF送付済み / 編集不可
 }
 
 export interface Company {
@@ -86,7 +92,7 @@ export interface Company {
 // タスクテンプレート
 export interface TaskTemplate {
   id: string;
-  name: string;        // テンプレート名（例: 密着案件）
+  name: string;
   tasks: {
     title: string;
     status: TaskStatus;
@@ -99,7 +105,7 @@ export interface TaskTemplate {
 // Discord設定
 export interface DiscordSettings {
   webhookUrl: string;
-  botToken: string;    // ピッピBot token (オプション)
+  botToken: string;
   channelId: string;
   enabled: boolean;
 }
@@ -114,11 +120,12 @@ export interface WorkspaceData {
   gcal?: GCalSettings;
   lastUpdated: string;
 }
+
 // Google Calendar設定
 export interface GCalSettings {
   enabled: boolean;
-  accessToken: string;       // OAuth access token
-  tokenExpiry: number;       // Unix timestamp (ms)
-  calendarId: string;        // 'primary' or custom calendar ID
-  clientColorMap: Record<string, number>; // clientId → GCal colorId (1-11)
+  accessToken: string;
+  tokenExpiry: number;
+  calendarId: string;
+  clientColorMap: Record<string, number>;
 }

@@ -139,16 +139,44 @@ function openPDFPreview(html: string) {
 // ─────────────────────────────────────────────────
 //  InvoiceView
 // ─────────────────────────────────────────────────
-//  InvoiceView
+// ─────────────────────────────────────────────────
+//  InvoiceView — 月次ビュー
 // ─────────────────────────────────────────────────
 export function InvoiceView({ store }: { store: Store }) {
-  const { data, addInvoice, updateInvoice, importTasksToInvoice } = store;
+  const { data, addInvoice, updateInvoice, deleteInvoice, importPendingTasks } = store;
   const td = store.today();
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [selectedClientId, setSelectedClientId] = useState('');
-  const [importedId, setImportedId] = useState<string | null>(null);
 
+  // 月リスト: 存在する月 + 過去3ヶ月 + 今月 + 来月
+  const allMonths = (() => {
+    const set = new Set<string>();
+    data.invoices.forEach(i => set.add(i.targetMonth));
+    data.tasks.filter(t => t.billingMonth).forEach(t => set.add(t.billingMonth!));
+    // 過去3ヶ月〜来月
+    for (let i = -3; i <= 1; i++) {
+      const d = new Date();
+      d.setMonth(d.getMonth() + i);
+      set.add(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+    }
+    return [...set].sort().reverse(); // 新しい月が上
+  })();
+
+  const [activeMonth, setActiveMonth] = useState(store.thisMonth());
+  const [openInvId, setOpenInvId]     = useState<string | null>(null);
+  const [importedId, setImportedId]   = useState<string | null>(null);
   const fmt = (n: number) => '¥' + n.toLocaleString();
+
+  // 対象月の集計
+  const monthInvoices = data.invoices.filter(i => i.targetMonth === activeMonth);
+  const monthTotal    = monthInvoices.reduce((a, inv) => {
+    const sub = inv.items.reduce((s, it) => s + (it.amount || 0), 0);
+    return a + (inv.taxType === 'exclusive' ? sub + Math.round(sub * 0.1) : sub);
+  }, 0);
+  const unpaidCount   = monthInvoices.filter(i => !i.paid).length;
+
+  // 対象月の未追加タスク（billingMonth=activeMonth & !billingConfirmed）
+  const pendingTasks = data.tasks.filter(t =>
+    t.status === 'done' && t.billingMonth === activeMonth && !t.billingConfirmed && t.revenue > 0
+  );
 
   const calcTotals = (inv: Invoice) => {
     const sub = inv.items.reduce((a, it) => a + (it.amount || 0), 0);
@@ -161,254 +189,353 @@ export function InvoiceView({ store }: { store: Store }) {
   const handlePDF = (inv: Invoice) => {
     const client = data.clients.find(c => c.id === inv.clientId);
     openPDFPreview(buildPDFHtml(inv, client?.name || '—', data.company));
+    // PDFを出力したらlocked=trueに
+    updateInvoice(inv.id, { locked: true, issueDate: inv.issueDate || td });
   };
 
-  const handleImport = (invId: string) => {
-    importTasksToInvoice(invId);
-    setImportedId(invId);
+  const handleImportPending = (clientId: string) => {
+    importPendingTasks(activeMonth, clientId);
+    setImportedId(clientId);
     setTimeout(() => setImportedId(null), 2000);
   };
 
-  const countImportable = (inv: Invoice) =>
-    data.tasks.filter(t => {
-      if (t.status !== 'done' || t.clientId !== inv.clientId) return false;
-      const d = t.completedAt || t.deadline || t.createdAt || '';
-      return !d || d.startsWith(inv.targetMonth);
-    }).filter(t => !inv.items.some(it => it.taskId === t.id)).length;
-
-  const C = {
-    page: { padding: '28px 32px 52px', maxWidth: 960, margin: '0 auto' } as const,
-    row: { display:'flex', alignItems:'center', gap:12, padding:'14px 20px', cursor:'pointer', transition:'background .12s' } as const,
-  };
-
   return (
-    <div style={C.page}>
-      {/* ── HEADER ── */}
-      <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:28 }}>
-        <div>
-          <div className="label" style={{ marginBottom:8 }}>INVOICE MANAGEMENT</div>
-          <h1 style={{ fontFamily:'var(--head)', fontSize:36, letterSpacing:2, margin:0, lineHeight:1 }}>
-            INVOICE
-          </h1>
+    <div style={{ display:'flex', height:'100%', overflow:'hidden' }}>
+
+      {/* ── 月リスト（左サイドバー） ── */}
+      <div style={{
+        width:160, flexShrink:0, borderRight:'1px solid var(--bd0)',
+        display:'flex', flexDirection:'column', overflowY:'auto',
+        background:'linear-gradient(180deg,var(--bg2),var(--bg))',
+      }}>
+        <div style={{ padding:'20px 16px 12px' }}>
+          <div className="label">PERIOD</div>
         </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)}
-            style={{ padding:'8px 12px', fontSize:11, width:168 }}>
-            <option value="">クライアントを選択</option>
-            {data.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <button className="btn btn-ac"
-            onClick={() => { if (selectedClientId) { addInvoice(selectedClientId); setSelectedClientId(''); } }}
-            disabled={!selectedClientId} style={{ opacity: selectedClientId ? 1 : 0.4 }}>
-            ＋ 新規作成
-          </button>
+        <div style={{ flex:1, padding:'0 8px 16px', display:'flex', flexDirection:'column', gap:2 }}>
+          {allMonths.map(m => {
+            const invs     = data.invoices.filter(i => i.targetMonth === m);
+            const total    = invs.reduce((a, i) => {
+              const sub = i.items.reduce((s, it) => s + (it.amount||0), 0);
+              return a + (i.taxType==='exclusive' ? sub + Math.round(sub*.1) : sub);
+            }, 0);
+            const hasUnpaid = invs.some(i => !i.paid);
+            const hasPending = data.tasks.some(t => t.status==='done'&&t.billingMonth===m&&!t.billingConfirmed&&t.revenue>0);
+            const isActive = m === activeMonth;
+
+            return (
+              <button key={m} onClick={() => setActiveMonth(m)} style={{
+                padding:'10px 12px', borderRadius:9, border:'none', cursor:'pointer', textAlign:'left',
+                background: isActive ? 'rgba(0,255,163,.1)' : 'transparent',
+                boxShadow: isActive ? '0 0 0 1px rgba(0,255,163,.2)' : 'none',
+                transition:'all .12s',
+              }}
+                onMouseEnter={e => { if(!isActive) e.currentTarget.style.background='rgba(255,255,255,.03)'; }}
+                onMouseLeave={e => { if(!isActive) e.currentTarget.style.background='transparent'; }}
+              >
+                <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
+                  <span style={{ fontFamily:'var(--mono)', fontSize:11, fontWeight:600,
+                    color: isActive ? 'var(--ac)' : 'var(--tx2)', letterSpacing:'-.3px' }}>
+                    {m.replace('-', '/')}
+                  </span>
+                  {hasPending && <div style={{ width:5, height:5, borderRadius:'50%', background:'var(--gold)', flexShrink:0 }}/>}
+                  {hasUnpaid && !hasPending && <div style={{ width:5, height:5, borderRadius:'50%', background:'var(--red)', flexShrink:0 }}/>}
+                </div>
+                {total > 0 && (
+                  <div style={{ fontFamily:'var(--mono)', fontSize:9, color: isActive?'var(--ac)':'var(--tx3)' }}>
+                    ¥{(total/10000).toFixed(1)}万
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* ── EMPTY ── */}
-      {data.invoices.length === 0 && (
-        <div style={{ textAlign:'center', padding:'80px 0', color:'var(--tx3)' }}>
-          <div style={{ fontFamily:'var(--mono)', fontSize:40, marginBottom:12, opacity:.12 }}>¥</div>
-          <div className="label">NO INVOICES</div>
-          <div style={{ fontSize:11, color:'var(--tx3)', marginTop:8 }}>クライアントを選択して新規作成</div>
-        </div>
-      )}
+      {/* ── メインエリア ── */}
+      <div style={{ flex:1, overflowY:'auto', padding:'24px 28px 48px' }}>
 
-      {/* ── LIST ── */}
-      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-        {data.invoices.map(inv => {
-          const client = data.clients.find(c => c.id === inv.clientId);
-          const { sub, tax, total } = calcTotals(inv);
-          const isLate = inv.dueDate && inv.dueDate < td && !inv.paid;
-          const isOpen = openId === inv.id;
-          const importable = countImportable(inv);
-          const justImported = importedId === inv.id;
-
-          const borderC = inv.paid ? 'rgba(0,255,163,.18)'
-            : isLate ? 'rgba(255,77,109,.22)'
-            : 'var(--bd0)';
-
-          return (
-            <div key={inv.id} style={{
-              background: 'linear-gradient(145deg, var(--s0), var(--bg2))',
-              border: `1px solid ${borderC}`,
-              borderRadius: 14,
-              overflow: 'hidden',
-              transition: 'border-color .15s',
-            }}>
-              {/* ── ROW ── */}
-              <div style={C.row}
-                onClick={() => setOpenId(isOpen ? null : inv.id)}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,255,163,.025)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                {/* Status bar */}
-                <div style={{ width:3, height:38, borderRadius:2, flexShrink:0,
-                  background: inv.paid ? 'var(--ac)' : isLate ? 'var(--red)' : 'var(--bd1)',
-                  boxShadow: inv.paid ? '0 0 8px var(--ac)' : isLate ? '0 0 8px var(--red)' : 'none',
-                }}/>
-
-                <div className="n-sm" style={{ color:'var(--ac)', minWidth:128, fontSize:11, fontWeight:600 }}>
-                  {inv.number}
-                </div>
-
-                <div style={{ fontSize:12, fontWeight:600, minWidth:100 }}>{client?.name || '—'}</div>
-
-                {inv.targetMonth && (
-                  <div className="n-sm" style={{ background:'var(--s2)', border:'1px solid var(--bd1)', borderRadius:6, padding:'2px 9px', color:'var(--tx2)' }}>
-                    {inv.targetMonth.replace('-', '/')}
-                  </div>
-                )}
-
-                <div className="n-sm" style={{ color:'var(--tx2)' }}>{inv.items.length}件</div>
-
-                {inv.paid && <span className="badge" style={{ color:'var(--ac)', borderColor:'rgba(0,255,163,.3)', background:'rgba(0,255,163,.07)', fontSize:9 }}>PAID</span>}
-                {isLate && !inv.paid && <span className="badge" style={{ color:'var(--red)', borderColor:'rgba(255,77,109,.3)', background:'rgba(255,77,109,.07)', fontSize:9 }}>OVERDUE</span>}
-                {importable > 0 && !inv.paid && (
-                  <span className="badge" style={{ color:'var(--blue)', borderColor:'rgba(75,142,255,.3)', background:'rgba(75,142,255,.07)', fontSize:9 }}>
-                    +{importable} tasks
-                  </span>
-                )}
-
-                <div style={{ flex:1 }}/>
-
-                <div className="n-lg" style={{ color: inv.paid ? 'var(--ac)' : 'var(--tx)' }}>
-                  {fmt(total)}
-                </div>
-                <div style={{ fontSize:10, color:'var(--tx3)', transition:'transform .15s', transform: isOpen ? 'rotate(180deg)' : 'none', marginLeft:6 }}>▾</div>
-              </div>
-
-              {/* ── DETAIL ── */}
-              {isOpen && (
-                <div className="anim-up" style={{ borderTop:'1px solid var(--bd0)', padding:'20px 24px' }}>
-
-                  {/* Settings row */}
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10, marginBottom:20 }}>
-                    {[
-                      { label:'請求書番号', content: <input value={inv.number} onChange={e => updateInvoice(inv.id, { number: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11, fontFamily:'var(--mono)' }}/> },
-                      { label:'宛先', content: <select value={inv.clientId} onChange={e => updateInvoice(inv.id, { clientId: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}>{data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select> },
-                      { label:'対象月', content: <input type="month" value={inv.targetMonth} onChange={e => updateInvoice(inv.id, { targetMonth: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}/> },
-                      { label:'支払期限', content: <input type="date" value={inv.dueDate} onChange={e => updateInvoice(inv.id, { dueDate: e.target.value })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}/> },
-                      { label:'税区分', content: <select value={inv.taxType} onChange={e => updateInvoice(inv.id, { taxType: e.target.value as Invoice['taxType'] })} style={{ width:'100%', padding:'7px 10px', fontSize:11 }}><option value="exclusive">税別(+10%)</option><option value="inclusive">税込(内税)</option><option value="none">非課税</option></select> },
-                    ].map(f => (
-                      <div key={f.label}>
-                        <div className="label" style={{ marginBottom:5, fontSize:8 }}>{f.label}</div>
-                        {f.content}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Items table */}
-                  <table className="tbl" style={{ marginBottom:12 }}>
-                    <thead><tr>
-                      <th style={{ width:32 }}>#</th>
-                      <th>品目 / DESCRIPTION</th>
-                      <th style={{ textAlign:'right', width:60 }}>数量</th>
-                      <th style={{ textAlign:'right', width:120 }}>単価</th>
-                      <th style={{ textAlign:'right', width:120 }}>金額</th>
-                      <th style={{ width:28 }}/>
-                    </tr></thead>
-                    <tbody>
-                      {inv.items.length === 0 && (
-                        <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--tx3)', padding:'20px', fontFamily:'var(--mono)', fontSize:9, letterSpacing:'.1em' }}>
-                          NO ITEMS — タスクから取込むか手動追加
-                        </td></tr>
-                      )}
-                      {inv.items.map((it, li) => (
-                        <tr key={li}>
-                          <td className="n-sm" style={{ color:'var(--tx3)' }}>{li + 1}</td>
-                          <td>
-                            <input value={it.name}
-                              onChange={e => { const items=[...inv.items]; items[li]={...items[li],name:e.target.value}; updateInvoice(inv.id,{items}); }}
-                              style={{ background:'transparent', border:'none', width:'100%', fontSize:12, color:'var(--tx)', padding:'2px 4px', borderRadius:4 }}
-                              onFocus={e=>e.currentTarget.style.background='var(--s2)'}
-                              onBlur={e=>e.currentTarget.style.background='transparent'}
-                            />
-                            {it.taskId && <span className="n-sm" style={{ color:'var(--ac)', marginLeft:4, opacity:.5 }}>TASK</span>}
-                          </td>
-                          <td style={{ textAlign:'right' }}>
-                            <input type="number" value={it.qty}
-                              onChange={e=>{ const items=[...inv.items]; const q=Number(e.target.value)||1; items[li]={...items[li],qty:q,amount:q*items[li].unitPrice}; updateInvoice(inv.id,{items}); }}
-                              style={{ background:'transparent', border:'none', width:50, textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--tx1)' }}
-                            />
-                          </td>
-                          <td style={{ textAlign:'right' }}>
-                            <input type="number" value={it.unitPrice}
-                              onChange={e=>{ const items=[...inv.items]; const p=Number(e.target.value)||0; items[li]={...items[li],unitPrice:p,amount:items[li].qty*p}; updateInvoice(inv.id,{items}); }}
-                              style={{ background:'transparent', border:'none', width:100, textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--tx1)' }}
-                            />
-                          </td>
-                          <td className="n-sm" style={{ textAlign:'right', fontWeight:600, fontSize:12, color:'var(--tx)' }}>{fmt(it.amount)}</td>
-                          <td>
-                            <button onClick={()=>updateInvoice(inv.id,{items:inv.items.filter((_,j)=>j!==li)})}
-                              style={{ background:'none', border:'none', color:'var(--tx3)', fontSize:11, padding:'0 4px' }}
-                              onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
-                              onMouseLeave={e=>e.currentTarget.style.color='var(--tx3)'}
-                            >✕</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {/* Buttons + Total */}
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
-                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-                      <button className="btn btn-ghost" style={{ fontSize:11 }}
-                        onClick={()=>updateInvoice(inv.id,{items:[...inv.items,{taskId:'',name:'',qty:1,unitPrice:0,amount:0}]})}>
-                        ＋ 明細追加
-                      </button>
-                      <button onClick={()=>handleImport(inv.id)} style={{
-                        padding:'8px 16px', fontSize:11, borderRadius:8, cursor:'pointer',
-                        background: justImported ? 'rgba(0,255,163,.15)' : importable>0 ? 'rgba(75,142,255,.1)' : 'transparent',
-                        border: importable>0||justImported ? `1px solid ${justImported?'rgba(0,255,163,.4)':'rgba(75,142,255,.3)'}` : '1px solid var(--bd1)',
-                        color: justImported ? 'var(--ac)' : importable>0 ? 'var(--blue)' : 'var(--tx2)',
-                        fontFamily:'var(--mono)', fontSize:10, letterSpacing:'.05em', transition:'all .15s',
-                      }}>
-                        {justImported ? '✓ 取込完了' : importable>0 ? `📋 ${importable}件のタスクを取込` : `📋 タスク取込`}
-                      </button>
-                      <button className="btn btn-ac" style={{ fontSize:11 }} onClick={()=>handlePDF(inv)}>🖨 PDF</button>
-                      <button onClick={()=>updateInvoice(inv.id,{paid:!inv.paid,paidAt:inv.paid?'':td})} style={{
-                        padding:'8px 16px', fontSize:10, borderRadius:8, cursor:'pointer', fontFamily:'var(--mono)',
-                        background: inv.paid ? 'rgba(255,77,109,.08)' : 'rgba(0,255,163,.08)',
-                        border: inv.paid ? '1px solid rgba(255,77,109,.25)' : '1px solid rgba(0,255,163,.25)',
-                        color: inv.paid ? 'var(--red)' : 'var(--ac)', letterSpacing:'.05em',
-                      }}>
-                        {inv.paid ? '✕ 未入金' : '✓ 入金済'}
-                      </button>
-                      <input value={inv.note||''} onChange={e=>updateInvoice(inv.id,{note:e.target.value})}
-                        placeholder="備考..." style={{ padding:'7px 12px', fontSize:11, width:150 }}/>
-                      <button style={{ background:'none', border:'none', color:'var(--tx3)', fontSize:15, padding:'4px 6px' }}
-                        onClick={()=>{if(confirm('削除しますか？'))store.update(d=>{d.invoices=d.invoices.filter(x=>x.id!==inv.id);});}}
-                        onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
-                        onMouseLeave={e=>e.currentTarget.style.color='var(--tx3)'}
-                      >🗑</button>
-                    </div>
-
-                    {/* Totals box */}
-                    <div style={{ background:'var(--bg2)', border:'1px solid var(--bd1)', borderRadius:12, padding:'14px 20px', minWidth:210, flexShrink:0 }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:5 }}>
-                        <span style={{ color:'var(--tx2)' }}>小計</span>
-                        <span className="n-sm">{fmt(inv.taxType==='inclusive'?sub-tax:sub)}</span>
-                      </div>
-                      {inv.taxType!=='none'&&(
-                        <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:10 }}>
-                          <span style={{ color:'var(--tx2)' }}>{inv.taxType==='exclusive'?'消費税(10%)':'うち消費税'}</span>
-                          <span className="n-sm">{fmt(tax)}</span>
-                        </div>
-                      )}
-                      <div style={{ borderTop:'1px solid var(--bd1)', paddingTop:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <span className="label" style={{ color:'var(--ac)' }}>TOTAL</span>
-                        <span className="n-xl" style={{ color: inv.paid?'var(--ac)':'var(--tx)', fontSize:20 }}>{fmt(total)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
+        {/* ── ヘッダー ── */}
+        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:24 }}>
+          <div>
+            <div className="label" style={{ marginBottom:8 }}>{activeMonth.replace('-','/')} BILLING</div>
+            <div style={{ display:'flex', alignItems:'baseline', gap:12 }}>
+              <h1 style={{ fontFamily:'var(--head)', fontSize:28, letterSpacing:2, margin:0, lineHeight:1 }}>
+                {activeMonth.replace('-', '/')}
+              </h1>
+              {monthTotal > 0 && (
+                <span style={{ fontFamily:'var(--mono)', fontSize:18, color:'var(--ac)', letterSpacing:'-1px' }}>
+                  ¥{(monthTotal/10000).toFixed(1)}万
+                </span>
+              )}
+              {unpaidCount > 0 && (
+                <span className="badge" style={{ color:'var(--red)', borderColor:'rgba(255,77,109,.3)', background:'rgba(255,77,109,.07)', fontSize:9 }}>
+                  未入金 {unpaidCount}件
+                </span>
               )}
             </div>
-          );
-        })}
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            {/* クライアント別に請求書を新規作成 */}
+            {data.clients.map(c => {
+              const exists = data.invoices.some(i => i.clientId === c.id && i.targetMonth === activeMonth);
+              if (exists) return null;
+              return (
+                <button key={c.id} className="btn btn-ghost" style={{ fontSize:11 }}
+                  onClick={() => addInvoice(c.id, activeMonth)}>
+                  ＋ {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── 未確定タスクの警告バナー ── */}
+        {pendingTasks.length > 0 && (
+          <div style={{
+            background:'rgba(255,209,102,.06)', border:'1px solid rgba(255,209,102,.25)',
+            borderRadius:12, padding:'14px 18px', marginBottom:20,
+            display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+          }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:8, height:8, borderRadius:'50%', background:'var(--gold)', flexShrink:0 }}/>
+              <div>
+                <div style={{ fontSize:12, fontWeight:600, color:'var(--gold)', marginBottom:2 }}>
+                  未追加のタスクがあります（{pendingTasks.length}件）
+                </div>
+                <div style={{ fontSize:10, color:'var(--tx3)' }}>
+                  {pendingTasks.map(t => t.title).join('・')}
+                </div>
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+              {/* クライアント別にまとめて追加 */}
+              {[...new Set(pendingTasks.map(t => t.clientId))].map(cid => {
+                const client = data.clients.find(c => c.id === cid);
+                const n = pendingTasks.filter(t => t.clientId === cid).length;
+                return (
+                  <button key={cid} onClick={() => handleImportPending(cid)} style={{
+                    padding:'7px 14px', fontSize:10, borderRadius:8, cursor:'pointer',
+                    background: importedId===cid ? 'rgba(0,255,163,.15)' : 'rgba(255,209,102,.1)',
+                    border: importedId===cid ? '1px solid rgba(0,255,163,.3)' : '1px solid rgba(255,209,102,.25)',
+                    color: importedId===cid ? 'var(--ac)' : 'var(--gold)',
+                    fontFamily:'var(--mono)', letterSpacing:'.05em', transition:'all .15s',
+                  }}>
+                    {importedId===cid ? '✓ 追加済' : `${client?.name} ${n}件を追加`}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── 請求書がない場合 ── */}
+        {monthInvoices.length === 0 && pendingTasks.length === 0 && (
+          <div style={{ textAlign:'center', padding:'60px 0', color:'var(--tx3)' }}>
+            <div style={{ fontFamily:'var(--mono)', fontSize:32, opacity:.08, marginBottom:12 }}>¥</div>
+            <div className="label" style={{ marginBottom:8 }}>NO INVOICES</div>
+            <div style={{ fontSize:11, marginBottom:16 }}>この月の請求書はありません</div>
+            <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
+              {data.clients.map(c => (
+                <button key={c.id} className="btn btn-ghost" style={{ fontSize:11 }}
+                  onClick={() => addInvoice(c.id, activeMonth)}>
+                  ＋ {c.name}の請求書を作成
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── 請求書一覧 ── */}
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          {monthInvoices.map(inv => {
+            const client = data.clients.find(c => c.id === inv.clientId);
+            const { sub, tax, total } = calcTotals(inv);
+            const isLate = inv.dueDate && inv.dueDate < td && !inv.paid;
+            const isOpen = openInvId === inv.id;
+            const invPendingTasks = pendingTasks.filter(t => t.clientId === inv.clientId);
+
+            return (
+              <div key={inv.id} style={{
+                background:'linear-gradient(145deg,var(--s0),var(--bg2))',
+                border:`1px solid ${inv.paid?'rgba(0,255,163,.18)':isLate?'rgba(255,77,109,.22)':inv.locked?'rgba(75,142,255,.2)':'var(--bd0)'}`,
+                borderRadius:14, overflow:'hidden',
+              }}>
+                {/* ── 一覧行 ── */}
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 20px', cursor:'pointer', transition:'background .12s' }}
+                  onClick={() => setOpenInvId(isOpen ? null : inv.id)}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(0,255,163,.025)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+                >
+                  <div style={{ width:3, height:38, borderRadius:2, flexShrink:0,
+                    background: inv.paid?'var(--ac)':isLate?'var(--red)':inv.locked?'var(--blue)':'var(--bd1)',
+                    boxShadow: inv.paid?'0 0 8px var(--ac)':isLate?'0 0 8px var(--red)':'none',
+                  }}/>
+                  <div>
+                    <div style={{ fontFamily:'var(--mono)', fontSize:11, fontWeight:600, color:'var(--ac)', marginBottom:2 }}>{inv.number}</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--tx)' }}>{client?.name || '—'}</div>
+                  </div>
+                  <div style={{ display:'flex', gap:8, alignItems:'center', marginLeft:8 }}>
+                    {inv.paid && <span className="badge" style={{ color:'var(--ac)', borderColor:'rgba(0,255,163,.3)', background:'rgba(0,255,163,.07)', fontSize:9 }}>PAID</span>}
+                    {isLate && !inv.paid && <span className="badge" style={{ color:'var(--red)', borderColor:'rgba(255,77,109,.3)', background:'rgba(255,77,109,.07)', fontSize:9 }}>OVERDUE</span>}
+                    {inv.locked && <span className="badge" style={{ color:'var(--blue)', borderColor:'rgba(75,142,255,.3)', background:'rgba(75,142,255,.07)', fontSize:9 }}>PDF送付済</span>}
+                    {invPendingTasks.length > 0 && (
+                      <span className="badge" style={{ color:'var(--gold)', borderColor:'rgba(255,209,102,.3)', background:'rgba(255,209,102,.07)', fontSize:9 }}>
+                        ＋{invPendingTasks.length}件未追加
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ flex:1 }}/>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontFamily:'var(--mono)', fontSize:18, fontWeight:600, color:inv.paid?'var(--ac)':'var(--tx)', letterSpacing:'-0.5px' }}>{fmt(total)}</div>
+                    {inv.dueDate && <div style={{ fontFamily:'var(--mono)', fontSize:9, color:isLate?'var(--red)':'var(--tx3)', marginTop:2 }}>期限 {inv.dueDate}</div>}
+                  </div>
+                  <div style={{ fontSize:10, color:'var(--tx3)', transition:'transform .15s', transform:isOpen?'rotate(180deg)':'none', marginLeft:6 }}>▾</div>
+                </div>
+
+                {/* ── 詳細 ── */}
+                {isOpen && (
+                  <div className="anim-up" style={{ borderTop:'1px solid var(--bd0)', padding:'20px 24px' }}>
+
+                    {/* ロック中の警告 */}
+                    {inv.locked && (
+                      <div style={{ background:'rgba(75,142,255,.06)', border:'1px solid rgba(75,142,255,.2)', borderRadius:8, padding:'10px 14px', marginBottom:16, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                        <span style={{ fontSize:11, color:'var(--blue)' }}>PDF送付済み。編集するには解除してください。</span>
+                        <button onClick={() => updateInvoice(inv.id, { locked: false })}
+                          style={{ background:'transparent', border:'1px solid rgba(75,142,255,.3)', borderRadius:6, padding:'4px 12px', fontSize:10, color:'var(--blue)', cursor:'pointer' }}>
+                          解除
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 設定行 */}
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10, marginBottom:20, opacity: inv.locked ? 0.5 : 1, pointerEvents: inv.locked ? 'none' : 'auto' }}>
+                      {[
+                        { label:'請求書番号', el:<input value={inv.number} onChange={e=>updateInvoice(inv.id,{number:e.target.value})} style={{width:'100%',padding:'7px 10px',fontSize:11,fontFamily:'var(--mono)'}}/> },
+                        { label:'宛先', el:<select value={inv.clientId} onChange={e=>updateInvoice(inv.id,{clientId:e.target.value})} style={{width:'100%',padding:'7px 10px',fontSize:11}}>{data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select> },
+                        { label:'発行日', el:<input type="date" value={inv.issueDate||''} onChange={e=>updateInvoice(inv.id,{issueDate:e.target.value})} style={{width:'100%',padding:'7px 10px',fontSize:11}}/> },
+                        { label:'支払期限', el:<input type="date" value={inv.dueDate} onChange={e=>updateInvoice(inv.id,{dueDate:e.target.value})} style={{width:'100%',padding:'7px 10px',fontSize:11}}/> },
+                        { label:'税区分', el:<select value={inv.taxType} onChange={e=>updateInvoice(inv.id,{taxType:e.target.value as Invoice['taxType']})} style={{width:'100%',padding:'7px 10px',fontSize:11}}><option value="exclusive">税別(+10%)</option><option value="inclusive">税込(内税)</option><option value="none">非課税</option></select> },
+                      ].map(f => (
+                        <div key={f.label}>
+                          <div className="label" style={{ marginBottom:5, fontSize:8 }}>{f.label}</div>
+                          {f.el}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 明細テーブル */}
+                    <table className="tbl" style={{ marginBottom:12, opacity:inv.locked?.5:1, pointerEvents:inv.locked?'none':'auto' }}>
+                      <thead><tr>
+                        <th style={{width:32}}>#</th>
+                        <th>品目</th>
+                        <th style={{textAlign:'right',width:60}}>数量</th>
+                        <th style={{textAlign:'right',width:120}}>単価</th>
+                        <th style={{textAlign:'right',width:120}}>金額</th>
+                        <th style={{width:28}}/>
+                      </tr></thead>
+                      <tbody>
+                        {inv.items.length===0&&(
+                          <tr><td colSpan={6} style={{textAlign:'center',color:'var(--tx3)',padding:'20px',fontFamily:'var(--mono)',fontSize:9,letterSpacing:'.1em'}}>
+                            明細なし
+                          </td></tr>
+                        )}
+                        {inv.items.map((it,li)=>(
+                          <tr key={li}>
+                            <td className="n-sm" style={{color:'var(--tx3)'}}>{li+1}</td>
+                            <td>
+                              <input value={it.name} onChange={e=>{const items=[...inv.items];items[li]={...items[li],name:e.target.value};updateInvoice(inv.id,{items});}}
+                                style={{background:'transparent',border:'none',width:'100%',fontSize:12,color:'var(--tx)',padding:'2px 4px',borderRadius:4}}
+                                onFocus={e=>e.currentTarget.style.background='var(--s2)'}
+                                onBlur={e=>e.currentTarget.style.background='transparent'}/>
+                              {it.taskId&&<span className="n-sm" style={{color:'var(--ac)',marginLeft:4,opacity:.5}}>TASK</span>}
+                            </td>
+                            <td style={{textAlign:'right'}}>
+                              <input type="number" value={it.qty} onChange={e=>{const items=[...inv.items];const q=Number(e.target.value)||1;items[li]={...items[li],qty:q,amount:q*items[li].unitPrice};updateInvoice(inv.id,{items});}}
+                                style={{background:'transparent',border:'none',width:50,textAlign:'right',fontFamily:'var(--mono)',fontSize:11,color:'var(--tx1)'}}/>
+                            </td>
+                            <td style={{textAlign:'right'}}>
+                              <input type="number" value={it.unitPrice} onChange={e=>{const items=[...inv.items];const p=Number(e.target.value)||0;items[li]={...items[li],unitPrice:p,amount:items[li].qty*p};updateInvoice(inv.id,{items});}}
+                                style={{background:'transparent',border:'none',width:100,textAlign:'right',fontFamily:'var(--mono)',fontSize:11,color:'var(--tx1)'}}/>
+                            </td>
+                            <td className="n-sm" style={{textAlign:'right',fontWeight:600,fontSize:12,color:'var(--tx)'}}>{fmt(it.amount)}</td>
+                            <td>
+                              <button onClick={()=>updateInvoice(inv.id,{items:inv.items.filter((_,j)=>j!==li)})}
+                                style={{background:'none',border:'none',color:'var(--tx3)',fontSize:11,padding:'0 4px',cursor:'pointer'}}
+                                onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+                                onMouseLeave={e=>e.currentTarget.style.color='var(--tx3)'}>✕</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* アクションボタン + 合計 */}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',flexWrap:'wrap',gap:12}}>
+                      {!inv.locked && (
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                          <button className="btn btn-ghost" style={{fontSize:11}}
+                            onClick={()=>updateInvoice(inv.id,{items:[...inv.items,{taskId:'',name:'',qty:1,unitPrice:0,amount:0}]})}>
+                            ＋ 明細追加
+                          </button>
+                          <button className="btn btn-ac" style={{fontSize:11}} onClick={()=>handlePDF(inv)}>
+                            🖨 PDF送付
+                          </button>
+                          <button onClick={()=>updateInvoice(inv.id,{paid:!inv.paid,paidAt:inv.paid?'':td})} style={{
+                            padding:'8px 16px',fontSize:10,borderRadius:8,cursor:'pointer',fontFamily:'var(--mono)',
+                            background:inv.paid?'rgba(255,77,109,.08)':'rgba(0,255,163,.08)',
+                            border:inv.paid?'1px solid rgba(255,77,109,.25)':'1px solid rgba(0,255,163,.25)',
+                            color:inv.paid?'var(--red)':'var(--ac)',letterSpacing:'.05em',
+                          }}>
+                            {inv.paid?'✕ 未入金':'✓ 入金済'}
+                          </button>
+                          <input value={inv.note||''} onChange={e=>updateInvoice(inv.id,{note:e.target.value})}
+                            placeholder="備考..." style={{padding:'7px 12px',fontSize:11,width:150}}/>
+                          <button onClick={()=>{if(confirm('削除しますか？'))deleteInvoice(inv.id);}}
+                            style={{background:'none',border:'none',color:'var(--tx3)',fontSize:15,padding:'4px 6px',cursor:'pointer'}}
+                            onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+                            onMouseLeave={e=>e.currentTarget.style.color='var(--tx3)'}>🗑</button>
+                        </div>
+                      )}
+                      {inv.locked && (
+                        <div style={{display:'flex',gap:8}}>
+                          <button className="btn btn-ghost" style={{fontSize:11}} onClick={()=>handlePDF(inv)}>🖨 再PDF出力</button>
+                          <button onClick={()=>updateInvoice(inv.id,{paid:!inv.paid,paidAt:inv.paid?'':td})} style={{
+                            padding:'8px 16px',fontSize:10,borderRadius:8,cursor:'pointer',fontFamily:'var(--mono)',
+                            background:inv.paid?'rgba(255,77,109,.08)':'rgba(0,255,163,.08)',
+                            border:inv.paid?'1px solid rgba(255,77,109,.25)':'1px solid rgba(0,255,163,.25)',
+                            color:inv.paid?'var(--red)':'var(--ac)',letterSpacing:'.05em',
+                          }}>
+                            {inv.paid?'✕ 未入金':'✓ 入金済'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* 合計ボックス */}
+                      <div style={{background:'var(--bg2)',border:'1px solid var(--bd1)',borderRadius:12,padding:'14px 20px',minWidth:210,flexShrink:0}}>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:5}}>
+                          <span style={{color:'var(--tx2)'}}>小計</span>
+                          <span className="n-sm">{fmt(inv.taxType==='inclusive'?sub-tax:sub)}</span>
+                        </div>
+                        {inv.taxType!=='none'&&(
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:10}}>
+                            <span style={{color:'var(--tx2)'}}>{inv.taxType==='exclusive'?'消費税(10%)':'うち消費税'}</span>
+                            <span className="n-sm">{fmt(tax)}</span>
+                          </div>
+                        )}
+                        <div style={{borderTop:'1px solid var(--bd1)',paddingTop:10,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                          <span className="label" style={{color:'var(--ac)'}}>TOTAL</span>
+                          <span style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:600,color:inv.paid?'var(--ac)':'var(--tx)',letterSpacing:'-1px'}}>{fmt(total)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
       </div>
     </div>
   );

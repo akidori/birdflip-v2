@@ -266,8 +266,24 @@ export default function App() {
 
       {/* ══ MAIN ══ */}
       <main style={{flex:1,overflowY:'auto',overflowX:'hidden',position:'relative',zIndex:1}}>
-        {/* GCal sync toast */}
-        {store.gcalSyncing&&(
+        {/* 請求確認トースト（右下積み上げ） */}
+        {store.billingPrompts.length > 0 && (
+          <div style={{position:'fixed',bottom:20,right:20,zIndex:200,display:'flex',flexDirection:'column-reverse',gap:8,maxWidth:320}}>
+            {store.billingPrompts.slice(0,3).map((p,i) => (
+              <BillingToast key={p.taskId} prompt={p} index={i}
+                onConfirm={(month)=>store.confirmBilling(p.taskId,month)}
+                onSkip={()=>store.skipBilling(p.taskId)}
+              />
+            ))}
+            {store.billingPrompts.length > 3 && (
+              <div style={{fontSize:10,color:'var(--tx3)',textAlign:'right',fontFamily:'var(--mono)'}}>
+                +{store.billingPrompts.length - 3}件
+              </div>
+            )}
+          </div>
+        )}
+
+
           <div style={{position:'fixed',bottom:20,right:20,zIndex:100,
             background:'var(--s1)',border:'1px solid rgba(0,255,163,.3)',
             borderRadius:10,padding:'9px 16px',
@@ -300,6 +316,49 @@ export default function App() {
         {view==='settings' &&<SettingsView store={store}/>}
         {view==='discord'  &&<DiscordView store={store}/>}
       </main>
+    </div>
+  );
+}
+
+// ─── 請求確認トースト ─────────────────────────────────
+import { useState as _useState } from 'react';
+function BillingToast({ prompt, index, onConfirm, onSkip }:
+  { prompt: import('./store').BillingPrompt; index: number; onConfirm:(month:string)=>void; onSkip:()=>void }) {
+  const [month, setMonth] = useState(prompt.suggestedMonth);
+  return (
+    <div className="anim-up" style={{
+      background:'linear-gradient(145deg,var(--s1),var(--bg2))',
+      border:'1px solid rgba(0,255,163,.25)',borderRadius:12,padding:'14px 16px',
+      boxShadow:'0 8px 32px rgba(0,0,0,.5)',backdropFilter:'blur(20px)',
+      animationDelay:`${index*0.05}s`,
+    }}>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
+        <div style={{width:6,height:6,borderRadius:'50%',background:'var(--ac)',boxShadow:'0 0 6px var(--ac)',flexShrink:0}}/>
+        <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--ac)',letterSpacing:'.1em'}}>請求に追加しますか？</span>
+      </div>
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:600,color:'var(--tx)',marginBottom:3,lineHeight:1.3}}>{prompt.taskTitle}</div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{fontSize:10,color:'var(--tx3)'}}>{prompt.clientName}</span>
+          <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--ac)',fontWeight:600}}>¥{prompt.revenue.toLocaleString()}</span>
+        </div>
+      </div>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:9,color:'var(--tx3)',fontFamily:'var(--mono)',letterSpacing:'.1em',marginBottom:4}}>請求月</div>
+        <input type="month" value={month} onChange={e=>setMonth(e.target.value)}
+          style={{width:'100%',padding:'6px 10px',fontSize:11,fontFamily:'var(--mono)'}}/>
+      </div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={()=>onConfirm(month)} style={{
+          flex:1,padding:'8px',fontSize:11,borderRadius:8,cursor:'pointer',
+          background:'rgba(0,255,163,.12)',border:'1px solid rgba(0,255,163,.3)',
+          color:'var(--ac)',fontWeight:700,fontFamily:'var(--mono)',letterSpacing:'.05em',
+        }}>✓ 追加</button>
+        <button onClick={onSkip} style={{
+          padding:'8px 12px',fontSize:11,borderRadius:8,cursor:'pointer',
+          background:'transparent',border:'1px solid var(--bd1)',color:'var(--tx3)',
+        }}>スキップ</button>
+      </div>
     </div>
   );
 }
