@@ -368,9 +368,8 @@ export function useStore() {
     update(d => { Object.assign(d.company, patch); });
   }, [update]);
 
-  const updateDiscord = useCallback((patch: Partial<DiscordSettings>) => {
-    update(d => { d.discord = { webhookUrl: '', botToken: '', channelId: '', enabled: false, ...d.discord, ...patch }; });
-  }, [update]);
+  // Discord連携は停止中
+  const updateDiscord = useCallback((_patch: Partial<DiscordSettings>) => {}, []);
 
   // === GCal設定 ===
   const updateGCal = useCallback((patch: Partial<GCalSettings>) => {

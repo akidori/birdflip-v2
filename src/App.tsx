@@ -7,7 +7,6 @@ import { Dashboard }   from './views/Dashboard';
 import { GanttView }   from './views/GanttView';
 import { ReportView }  from './views/ReportView';
 import { SettingsView} from './views/SettingsView';
-import { DiscordView } from './views/DiscordView';
 
 /* ── BirdFlip Logo Icon ── */
 function BfLogo({size=20}:{size?:number}) {
@@ -19,7 +18,7 @@ function BfLogo({size=20}:{size?:number}) {
   );
 }
 
-export type View = 'dashboard'|'table'|'board'|'gantt'|'invoice'|'report'|'settings'|'discord';
+export type View = 'dashboard'|'table'|'board'|'gantt'|'invoice'|'report'|'settings';
 
 const NAV: {id:View; icon:string; label:string}[] = [
   {id:'dashboard', icon:'◈', label:'Overview'},
@@ -28,7 +27,6 @@ const NAV: {id:View; icon:string; label:string}[] = [
   {id:'gantt',     icon:'▤', label:'Timeline'},
   {id:'invoice',   icon:'¥', label:'Invoice'},
   {id:'report',    icon:'↗', label:'Report'},
-  {id:'discord',   icon:'✦', label:'Discord'},
   {id:'settings',  icon:'⊙', label:'Settings'},
 ];
 
@@ -147,7 +145,6 @@ export default function App() {
   const late   = active.filter(t=>t.deadline&&t.deadline<store.today());
   const urgent = active.filter(t=>t.priority==='urgent');
   const high   = active.filter(t=>t.priority==='high');
-  const dcOk   = store.data.discord?.enabled&&store.data.discord?.webhookUrl;
   const gcOk   = store.data.gcal?.enabled&&store.data.gcal?.accessToken;
   const mRev   = store.data.tasks
     .filter(t=>t.status==='done'&&(t.completedAt||'').startsWith(store.thisMonth()))
@@ -204,8 +201,7 @@ export default function App() {
               style={{justifyContent:col?'center':'flex-start',padding:col?'9px 0':'8px 10px'}}>
               <span style={{fontSize:14,width:18,textAlign:'center',flexShrink:0,lineHeight:1}}>{n.icon}</span>
               {!col&&<span>{n.label}</span>}
-              {!col&&n.id==='discord'&&dcOk&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'var(--ac)',boxShadow:'0 0 8px var(--ac)',flexShrink:0}}/>}
-              {!col&&n.id==='settings'&&gcOk&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'var(--blue)',flexShrink:0}}/>}
+                            {!col&&n.id==='settings'&&gcOk&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'var(--blue)',flexShrink:0}}/>}
             </button>
           ))}
         </nav>
@@ -314,7 +310,6 @@ export default function App() {
         {view==='invoice'  &&<InvoiceView store={store}/>}
         {view==='report'   &&<ReportView store={store}/>}
         {view==='settings' &&<SettingsView store={store}/>}
-        {view==='discord'  &&<DiscordView store={store}/>}
       </main>
     </div>
   );
