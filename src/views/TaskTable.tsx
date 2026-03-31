@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { STATUS_CONFIG, type Task, type TaskStatus } from '../types';
 import type { useStore } from '../store';
 
@@ -93,7 +93,22 @@ function AddClientModal({ store, onClose }: { store: Store; onClose: () => void 
 
 export function TaskTable({ store }: { store: Store }) {
   const { data, updateTask, deleteTask } = store;
-  const [filter, setFilter] = useState({ search:'', status:'active', client:'all' });
+  const [filter, setFilter] = useState({
+    search: '', status: 'active', client: 'all',
+    priority: 'all', assignee: 'all', overdue: false,
+  });
+
+  // Cmd+K で検索フォーカス
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        document.getElementById('task-search')?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   const [sortKey, setSortKey] = useState<'deadline'|'status'|'priority'|'title'>('priority');
   const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
   const [adding, setAdding]   = useState(false);
@@ -105,7 +120,17 @@ export function TaskTable({ store }: { store: Store }) {
   if (filter.status==='active')    tasks = tasks.filter(t => t.status!=='done'&&t.status!=='stop');
   else if (filter.status!=='all')  tasks = tasks.filter(t => t.status===filter.status);
   if (filter.client!=='all')       tasks = tasks.filter(t => t.clientId===filter.client);
-  if (filter.search) { const s=filter.search.toLowerCase(); tasks=tasks.filter(t=>t.title.toLowerCase().includes(s)||t.assignee.toLowerCase().includes(s)); }
+  if (filter.priority!=='all')     tasks = tasks.filter(t => t.priority===filter.priority);
+  if (filter.assignee!=='all')     tasks = tasks.filter(t => t.assignee===filter.assignee);
+  if (filter.overdue)              tasks = tasks.filter(t => t.deadline&&t.deadline<td&&t.status!=='done'&&t.status!=='stop');
+  if (filter.search) {
+    const s = filter.search.toLowerCase();
+    tasks = tasks.filter(t =>
+      t.title.toLowerCase().includes(s) ||
+      t.assignee.toLowerCase().includes(s) ||
+      (data.clients.find(c=>c.id===t.clientId)?.name||'').toLowerCase().includes(s)
+    );
+  }
 
   const staOrder = Object.keys(STATUS_CONFIG);
   tasks.sort((a,b) => {
@@ -127,6 +152,16 @@ export function TaskTable({ store }: { store: Store }) {
     .reduce((a,t)=>a+(t.revenue||0),0);
 
   const urgentCount = tasks.filter(t=>t.priority==='urgent'||t.priority==='high').length;
+  const overdueCount = data.tasks.filter(t=>t.deadline&&t.deadline<td&&t.status!=='done'&&t.status!=='stop').length;
+  const activeFilterCount = [
+    filter.status!=='active', filter.client!=='all',
+    filter.priority!=='all', filter.assignee!=='all', filter.overdue,
+  ].filter(Boolean).length;
+
+  // 担当者リスト（タスクに入力されているもの）
+  const assignees = [...new Set(data.tasks.map(t=>t.assignee).filter(Boolean))];
+
+  const clearFilters = () => setFilter({ search:'', status:'active', client:'all', priority:'all', assignee:'all', overdue:false });
 
   const SH = ({ k, label }: { k: typeof sortKey; label: string }) => (
     <span onClick={()=>handleSort(k)} style={{ cursor:'pointer', userSelect:'none', color: sortKey===k?'var(--ac)':'var(--tx2)', display:'flex', alignItems:'center', gap:3 }}>
@@ -154,8 +189,20 @@ export function TaskTable({ store }: { store: Store }) {
             </span>
           </div>
         )}
-        <input value={filter.search} onChange={e=>setFilter({...filter,search:e.target.value})}
-          placeholder="検索..." style={{ padding:'7px 12px', fontSize:11, width:140 }}/>
+        <div style={{ position:'relative', flexShrink:0 }}>
+          <input value={filter.search} onChange={e=>setFilter({...filter,search:e.target.value})}
+            placeholder="検索... (⌘K)" style={{ padding:'7px 12px 7px 32px', fontSize:11, width:160 }}
+            onKeyDown={e=>{ if(e.key==='Escape') setFilter({...filter,search:''}); }}
+            id="task-search"
+          />
+          <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', fontSize:12, color:'var(--tx3)', pointerEvents:'none' }}>⌕</span>
+          {filter.search && (
+            <button onClick={()=>setFilter({...filter,search:''})} style={{
+              position:'absolute', right:8, top:'50%', transform:'translateY(-50%)',
+              background:'none', border:'none', color:'var(--tx3)', cursor:'pointer', fontSize:12, padding:0, lineHeight:1,
+            }}>✕</button>
+          )}
+        </div>
         <select value={filter.status} onChange={e=>setFilter({...filter,status:e.target.value})}
           style={{ padding:'7px 10px', fontSize:11 }}>
           <option value="active">進行中</option>
@@ -167,7 +214,69 @@ export function TaskTable({ store }: { store: Store }) {
           <option value="all">全案件</option>
           {data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+
+        {/* 優先度フィルター */}
+        <select value={filter.priority} onChange={e=>setFilter({...filter,priority:e.target.value})}
+          style={{ padding:'7px 10px', fontSize:11, color: filter.priority!=='all'?'var(--gold)':'var(--tx2)',
+            background: filter.priority!=='all'?'rgba(255,209,102,.08)':'var(--s1)',
+            border: filter.priority!=='all'?'1px solid rgba(255,209,102,.3)':'1px solid var(--bd1)',
+            borderRadius:'var(--r)',
+          }}>
+          <option value="all">全優先度</option>
+          <option value="urgent">🔴 緊急</option>
+          <option value="high">🟡 高</option>
+          <option value="medium">🔵 中</option>
+          <option value="low">⚫ 低</option>
+        </select>
+
+        {/* 担当者フィルター */}
+        {assignees.length > 0 && (
+          <select value={filter.assignee} onChange={e=>setFilter({...filter,assignee:e.target.value})}
+            style={{ padding:'7px 10px', fontSize:11,
+              background: filter.assignee!=='all'?'rgba(75,142,255,.08)':'var(--s1)',
+              border: filter.assignee!=='all'?'1px solid rgba(75,142,255,.3)':'1px solid var(--bd1)',
+              borderRadius:'var(--r)', color: filter.assignee!=='all'?'var(--blue)':'var(--tx2)',
+            }}>
+            <option value="all">全担当者</option>
+            {assignees.map(a=><option key={a} value={a}>{a}</option>)}
+          </select>
+        )}
+
+        {/* クイックフィルタ: 遅延のみ */}
+        {overdueCount > 0 && (
+          <button onClick={()=>setFilter({...filter,overdue:!filter.overdue})} style={{
+            display:'flex', alignItems:'center', gap:5,
+            padding:'6px 10px', borderRadius:'var(--r)', fontSize:10, cursor:'pointer',
+            background: filter.overdue?'rgba(255,77,109,.15)':'rgba(255,77,109,.06)',
+            border: `1px solid ${filter.overdue?'rgba(255,77,109,.5)':'rgba(255,77,109,.2)'}`,
+            color:'var(--red)', fontFamily:'var(--mono)', letterSpacing:'.05em',
+            transition:'all .15s',
+          }}>
+            <div style={{ width:5, height:5, borderRadius:'50%', background:'var(--red)', boxShadow:filter.overdue?'0 0 6px var(--red)':'none' }}/>
+            遅延 {overdueCount}
+          </button>
+        )}
+
+        {/* フィルタークリア */}
+        {activeFilterCount > 0 && (
+          <button onClick={clearFilters} style={{
+            padding:'6px 10px', borderRadius:'var(--r)', fontSize:10, cursor:'pointer',
+            background:'transparent', border:'1px solid var(--bd1)', color:'var(--tx3)',
+            display:'flex', alignItems:'center', gap:4,
+          }}
+            onMouseEnter={e=>{ e.currentTarget.style.borderColor='var(--bd2)'; e.currentTarget.style.color='var(--tx1)'; }}
+            onMouseLeave={e=>{ e.currentTarget.style.borderColor='var(--bd1)'; e.currentTarget.style.color='var(--tx3)'; }}
+          >
+            ✕ クリア <span style={{ fontFamily:'var(--mono)', fontSize:9, background:'var(--s2)', borderRadius:10, padding:'1px 5px' }}>{activeFilterCount}</span>
+          </button>
+        )}
+
         <div style={{ flex:1 }}/>
+        {monthRevenue>0&&<span className="n-sm" style={{ color:'var(--ac)' }}>今月 ¥{monthRevenue.toLocaleString()}</span>}
+        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx3)' }}>{tasks.length}件</span>
+        <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 12px' }} onClick={()=>setModal(true)}>＋ 案件</button>
+        <button className="btn btn-ac" style={{ fontSize:11 }} onClick={()=>setAdding(true)}>＋ タスク</button>
+      </div>
         {monthRevenue>0&&<span className="n-sm" style={{ color:'var(--ac)' }}>今月 ¥{monthRevenue.toLocaleString()}</span>}
         <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--tx3)' }}>{tasks.length}件</span>
         <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 12px' }} onClick={()=>setModal(true)}>＋ 案件</button>
