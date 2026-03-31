@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from './store';
 import { TaskTable }   from './views/TaskTable';
 import { TaskBoard }   from './views/TaskBoard';
@@ -7,6 +7,7 @@ import { Dashboard }   from './views/Dashboard';
 import { GanttView }   from './views/GanttView';
 import { ReportView }  from './views/ReportView';
 import { SettingsView} from './views/SettingsView';
+import { MobileView }  from './views/MobileView';
 
 /* ── BirdFlip Logo Icon ── */
 function BfLogo({size=20}:{size?:number}) {
@@ -67,6 +68,13 @@ export default function App() {
   const store = useStore();
   const [view, setView] = useState<View>('dashboard');
   const [col, setCol] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   /* ── Loading ── */
   if (store.loading) return (
@@ -149,6 +157,9 @@ export default function App() {
   const mRev   = store.data.tasks
     .filter(t=>t.status==='done'&&(t.completedAt||'').startsWith(store.thisMonth()))
     .reduce((a,t)=>a+(t.revenue||0),0);
+
+  // ── モバイルは専用ビュー ──
+  if (isMobile) return <MobileView store={store}/>;
 
   return (
     <div style={{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--tx)',overflow:'hidden',position:'relative'}}>
