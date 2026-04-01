@@ -8,6 +8,7 @@ import { GanttView }   from './views/GanttView';
 import { ReportView }  from './views/ReportView';
 import { SettingsView} from './views/SettingsView';
 import { MobileView }  from './views/MobileView';
+import { OKRView }     from './views/OKRView';
 
 /* ── BirdFlip Logo Icon ── */
 function BfLogo({size=20}:{size?:number}) {
@@ -19,7 +20,7 @@ function BfLogo({size=20}:{size?:number}) {
   );
 }
 
-export type View = 'dashboard'|'table'|'board'|'gantt'|'invoice'|'report'|'settings';
+export type View = 'dashboard'|'table'|'board'|'gantt'|'invoice'|'report'|'settings'|'okr';
 
 const NAV: {id:View; icon:string; label:string}[] = [
   {id:'dashboard', icon:'◈', label:'Overview'},
@@ -321,6 +322,7 @@ export default function App() {
         {view==='invoice'  &&<InvoiceView store={store}/>}
         {view==='report'   &&<ReportView store={store}/>}
         {view==='settings' &&<SettingsView store={store}/>}
+        {view==='okr'      &&<OKRView store={store}/>}
       </main>
     </div>
   );

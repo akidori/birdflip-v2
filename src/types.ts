@@ -118,6 +118,7 @@ export interface WorkspaceData {
   templates?: TaskTemplate[];
   discord?: DiscordSettings;
   gcal?: GCalSettings;
+  okr?: OKRSettings;
   lastUpdated: string;
 }
 
@@ -128,4 +129,33 @@ export interface GCalSettings {
   tokenExpiry: number;
   calendarId: string;
   clientColorMap: Record<string, number>;
+}
+
+// ─── OKR ───────────────────────────────────────
+export interface KeyResult {
+  id: string;
+  objectiveId: string;
+  title: string;
+  target: number;       // 目標値（例: 1000000）
+  current: number;      // 現在値（手動 or タスクから自動集計）
+  unit: string;         // 単位（例: '円', '件', '%'）
+  autoCalc: boolean;    // trueならタスクのrevenueから自動集計
+  taskIds: string[];    // 紐付けタスクID
+  dueDate: string;
+  notes: string;
+}
+
+export interface Objective {
+  id: string;
+  title: string;
+  description: string;
+  period: 'annual' | 'q1' | 'q2' | 'q3' | 'q4';
+  year: number;
+  parentId?: string;    // 年間OのIDを持つ四半期O
+  keyResults: KeyResult[];
+  createdAt: string;
+}
+
+export interface OKRSettings {
+  objectives: Objective[];
 }

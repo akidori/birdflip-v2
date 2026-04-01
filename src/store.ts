@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { WorkspaceData, Task, Client, Invoice, InvoiceItem, Company, TaskTemplate, DiscordSettings, GCalSettings } from './types';
+import type { WorkspaceData, Task, Client, Invoice, InvoiceItem, Company, TaskTemplate, DiscordSettings, GCalSettings, Objective, KeyResult, OKRSettings } from './types';
 import { onAuth, getUserWorkspaceId, createWorkspace, loadWorkspace, saveWorkspace, onWorkspaceChange, googleLogin as _googleLogin, googleLogout, type User } from './firebase';
 import { syncTaskToGCal, deleteTaskGCalEvents, isTokenValid } from './gcal';
 
@@ -371,6 +371,55 @@ export function useStore() {
   // Discord連携は停止中
   const updateDiscord = useCallback((_patch: Partial<DiscordSettings>) => {}, []);
 
+  // === OKR ===
+  const addObjective = useCallback((obj: Omit<Objective, 'id' | 'createdAt' | 'keyResults'>) => {
+    update(d => {
+      if (!d.okr) d.okr = { objectives: [] };
+      d.okr.objectives.push({ ...obj, id: genId(), createdAt: today(), keyResults: [] });
+    });
+  }, [update]);
+
+  const updateObjective = useCallback((id: string, patch: Partial<Objective>) => {
+    update(d => {
+      if (!d.okr) return;
+      const o = d.okr.objectives.find(x => x.id === id);
+      if (o) Object.assign(o, patch);
+    });
+  }, [update]);
+
+  const deleteObjective = useCallback((id: string) => {
+    update(d => {
+      if (!d.okr) return;
+      d.okr.objectives = d.okr.objectives.filter(x => x.id !== id && x.parentId !== id);
+    });
+  }, [update]);
+
+  const addKeyResult = useCallback((objectiveId: string, kr: Omit<KeyResult, 'id' | 'objectiveId'>) => {
+    update(d => {
+      if (!d.okr) return;
+      const o = d.okr.objectives.find(x => x.id === objectiveId);
+      if (o) o.keyResults.push({ ...kr, id: genId(), objectiveId });
+    });
+  }, [update]);
+
+  const updateKeyResult = useCallback((objectiveId: string, krId: string, patch: Partial<KeyResult>) => {
+    update(d => {
+      if (!d.okr) return;
+      const o = d.okr.objectives.find(x => x.id === objectiveId);
+      if (!o) return;
+      const kr = o.keyResults.find(x => x.id === krId);
+      if (kr) Object.assign(kr, patch);
+    });
+  }, [update]);
+
+  const deleteKeyResult = useCallback((objectiveId: string, krId: string) => {
+    update(d => {
+      if (!d.okr) return;
+      const o = d.okr.objectives.find(x => x.id === objectiveId);
+      if (o) o.keyResults = o.keyResults.filter(x => x.id !== krId);
+    });
+  }, [update]);
+
   // === GCal設定 ===
   const updateGCal = useCallback((patch: Partial<GCalSettings>) => {
     update(d => {
@@ -414,6 +463,8 @@ export function useStore() {
     addInvoice, updateInvoice, deleteInvoice, importPendingTasks,
     updateCompany, updateDiscord,
     updateGCal, enableGCal, syncAllToGCal,
+    addObjective, updateObjective, deleteObjective,
+    addKeyResult, updateKeyResult, deleteKeyResult,
     billingPrompts, confirmBilling, confirmBillingWithMonth, skipBilling,
     today, thisMonth,
   };
