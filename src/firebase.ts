@@ -114,6 +114,18 @@ export async function getUserWorkspaceId(uid: string): Promise<string | null> {
 // ─────────────────────────────────────
 export async function createWorkspace(uid: string, email: string): Promise<string> {
   const wsId = 'ws_' + uid.slice(0, 8);
+  // 既存データがある場合は上書きしない（okrフィールドのみ追加）
+  const existing = await getDoc(doc(db, 'workspaces', wsId));
+  if (existing.exists()) {
+    // 既存データ保護：okrフィールドがなければ追加するだけ
+    const d = existing.data() as any;
+    if (!d.okr) {
+      await setDoc(doc(db, 'workspaces', wsId), { okr: { objectives: [] } }, { merge: true });
+    }
+    await setDoc(doc(db, 'users', uid), { workspaceId: wsId, email }, { merge: true });
+    return wsId;
+  }
+  // 新規ユーザーのみ完全初期化
   await setDoc(doc(db, 'workspaces', wsId), {
     createdBy: uid,
     createdAt: new Date().toISOString(),
@@ -121,7 +133,7 @@ export async function createWorkspace(uid: string, email: string): Promise<strin
     company: { name: '', zip: '', addr: '', tel: '', email: '', bank: '', branch: '', aType: '普通', aNo: '', aName: '', reg: '' },
     okr: { objectives: [] },
     lastUpdated: new Date().toISOString(),
-  }, { merge: true });
+  });
   await setDoc(doc(db, 'users', uid), { workspaceId: wsId, email }, { merge: true });
   return wsId;
 }
@@ -226,7 +238,8 @@ async function mergeOldTasksIfNeeded(wsId: string, current: WorkspaceData): Prom
 // ─────────────────────────────────────
 export async function saveWorkspace(wsId: string, data: WorkspaceData) {
   data.lastUpdated = new Date().toISOString();
-  await setDoc(doc(db, 'workspaces', wsId), data, { merge: true });
+  // merge:trueは使わない（配列フィールドは完全上書きが正しい）
+  await setDoc(doc(db, 'workspaces', wsId), data);
 }
 
 // ─────────────────────────────────────
