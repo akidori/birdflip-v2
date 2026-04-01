@@ -119,6 +119,7 @@ export async function createWorkspace(uid: string, email: string): Promise<strin
     createdAt: new Date().toISOString(),
     clients: [], tasks: [], invoices: [],
     company: { name: '', zip: '', addr: '', tel: '', email: '', bank: '', branch: '', aType: '普通', aNo: '', aName: '', reg: '' },
+    okr: { objectives: [] },
     lastUpdated: new Date().toISOString(),
   }, { merge: true });
   await setDoc(doc(db, 'users', uid), { workspaceId: wsId, email }, { merge: true });
